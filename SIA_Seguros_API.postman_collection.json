@@ -1,0 +1,542 @@
+{
+	"info": {
+		"_postman_id": "sia-seguros-api-collection",
+		"name": "SIA Seguros API - Clientes",
+		"description": "Colección de endpoints para la API de SIA Seguros - Gestión de Clientes y KYC",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "basic",
+		"basic": [
+			{
+				"key": "username",
+				"value": "Admin",
+				"type": "string"
+			},
+			{
+				"key": "password",
+				"value": "Caramelo#2030",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Root",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Endpoint raíz de la API"
+			},
+			"response": []
+		},
+		{
+			"name": "Clientes",
+			"item": [
+				{
+					"name": "Obtener todos los clientes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Número de página"
+								},
+								{
+									"key": "page_size",
+									"value": "10",
+									"description": "Tamaño de página (máximo 100)"
+								}
+							]
+						},
+						"description": "Obtiene todos los registros de clientes con paginación"
+					},
+					"response": []
+				},
+				{
+					"name": "Buscar cliente por nombre",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&cnomcliente=Juan",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "cnomcliente",
+									"value": "Juan",
+									"description": "Filtro parcial por nombre de cliente"
+								}
+							]
+						},
+						"description": "Busca clientes por nombre (búsqueda parcial)"
+					},
+					"response": []
+				},
+				{
+					"name": "Buscar cliente por RNC",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&crnc=123456",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "crnc",
+									"value": "123456",
+									"description": "Filtro parcial por RNC"
+								}
+							]
+						},
+						"description": "Busca clientes por RNC (búsqueda parcial)"
+					},
+					"response": []
+				},
+				{
+					"name": "Buscar cliente por cédula",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&ccedula=001",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "ccedula",
+									"value": "001",
+									"description": "Filtro parcial por cédula"
+								}
+							]
+						},
+						"description": "Busca clientes por cédula (búsqueda parcial)"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar por tipo de cliente",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&tipo_cliente=VIP",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "tipo_cliente",
+									"value": "VIP",
+									"description": "Filtro por tipo de cliente (exacto)"
+								}
+							]
+						},
+						"description": "Filtra clientes por tipo de cliente"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar por estatus",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&estatus=A",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "estatus",
+									"value": "A",
+									"description": "Filtro por estatus (exacto)"
+								}
+							]
+						},
+						"description": "Filtra clientes por estatus"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar por sucursal",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&sucursal=001",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "sucursal",
+									"value": "001",
+									"description": "Filtro por código de sucursal (exacto)"
+								}
+							]
+						},
+						"description": "Filtra clientes por sucursal"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar por Cliente/Prospecto",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&es_prospecto=C",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "es_prospecto",
+									"value": "C",
+									"description": "C=Cliente, P=Prospecto"
+								}
+							]
+						},
+						"description": "Filtra por tipo: Cliente (C) o Prospecto (P)"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtros combinados",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/clientes?page=1&page_size=10&cnomcliente=Juan&es_prospecto=C&tipo_cliente=VIP",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"clientes"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "cnomcliente",
+									"value": "Juan"
+								},
+								{
+									"key": "es_prospecto",
+									"value": "C"
+								},
+								{
+									"key": "tipo_cliente",
+									"value": "VIP"
+								}
+							]
+						},
+						"description": "Ejemplo de uso de múltiples filtros combinados"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints para gestión de clientes"
+		},
+		{
+			"name": "KYC",
+			"item": [
+				{
+					"name": "Obtener todos los registros KYC",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/kyc?page=1&page_size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"kyc"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Número de página"
+								},
+								{
+									"key": "page_size",
+									"value": "10",
+									"description": "Tamaño de página (máximo 100)"
+								}
+							]
+						},
+						"description": "Obtiene todos los registros de KYC con paginación e incluye totales por estado"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar KYC por estado VIGENTE",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/kyc?page=1&page_size=10&estado_formulario=VIGENTE",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"kyc"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "estado_formulario",
+									"value": "VIGENTE",
+									"description": "Estados: VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR"
+								}
+							]
+						},
+						"description": "Filtra registros KYC por estado VIGENTE"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar KYC por estado VENCIDO",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/kyc?page=1&page_size=10&estado_formulario=VENCIDO",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"kyc"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "estado_formulario",
+									"value": "VENCIDO"
+								}
+							]
+						},
+						"description": "Filtra registros KYC por estado VENCIDO"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtrar KYC por nombre de cliente",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/kyc?page=1&page_size=10&cnomcliente=Juan",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"kyc"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "cnomcliente",
+									"value": "Juan",
+									"description": "Filtro parcial por nombre de cliente"
+								}
+							]
+						},
+						"description": "Busca registros KYC por nombre de cliente (búsqueda parcial)"
+					},
+					"response": []
+				},
+				{
+					"name": "Filtros combinados KYC",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/kyc?page=1&page_size=10&cnomcliente=Juan&estado_formulario=VIGENTE",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"kyc"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "10"
+								},
+								{
+									"key": "cnomcliente",
+									"value": "Juan"
+								},
+								{
+									"key": "estado_formulario",
+									"value": "VIGENTE"
+								}
+							]
+						},
+						"description": "Ejemplo de uso de múltiples filtros combinados en KYC"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints para gestión de KYC (Know Your Customer)"
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5050",
+			"type": "string"
+		}
+	]
+}
+
