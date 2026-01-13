@@ -30,7 +30,29 @@ pip install -r requirements.txt
 
 ## Configuración
 
-Las credenciales de la base de datos y autenticación están configuradas en `config.py`.
+1. Copiar el archivo de ejemplo de variables de entorno:
+```bash
+cp .env.example .env
+```
+
+2. Editar el archivo `.env` con tus credenciales:
+```env
+# Configuración de la base de datos SQL Server
+TARGET_SERVER=40.90.233.174,1433
+TARGET_DATABASE=SIAsegCaceres
+TARGET_USER=sa
+TARGET_PASSWORD=Admin2021*
+
+# Configuración de autenticación API
+ADMIN_USERNAME=Admin
+ADMIN_PASSWORD=Caramelo#2030
+
+# Configuración de paginación
+DEFAULT_PAGE_SIZE=10
+MAX_PAGE_SIZE=100
+```
+
+**Nota:** El archivo `.env` está en `.gitignore` y no se subirá al repositorio por seguridad.
 
 ## Ejecución
 
