@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Query, Depends, HTTPException
+from fastapi import FastAPI, Query, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from typing import Optional
 from math import ceil
 import pyodbc
+import logging
+import traceback
+from datetime import datetime
 from config import (
     TARGET_SERVER, TARGET_DATABASE, TARGET_USER, TARGET_PASSWORD,
     DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
@@ -10,11 +13,49 @@ from config import (
 from models import ClientResponse, PaginatedResponse, KYCResponse, PaginatedKYCResponse, TotalesPorEstado
 from auth import verify_credentials
 
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('api_errors.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="API SIA Seguros - Clientes",
     description="API para consultar información de clientes desde SQL Server",
     version="1.0.0"
 )
+
+# Exception handler global
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Manejador global de excepciones para capturar todos los errores no manejados
+    """
+    logger.error(
+        f"Error no manejado en {request.method} {request.url.path}",
+        exc_info=True,
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "query_params": dict(request.query_params),
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback": traceback.format_exc()
+        }
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Error interno del servidor",
+            "detail": str(exc),
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
 
 def get_db_connection():
@@ -33,6 +74,18 @@ def get_db_connection():
         conn = pyodbc.connect(connection_string)
         return conn
     except Exception as e:
+        logger.error(
+            f"Error al conectar con la base de datos",
+            exc_info=True,
+            extra={
+                "server": TARGET_SERVER,
+                "database": TARGET_DATABASE,
+                "user": TARGET_USER,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Error al conectar con la base de datos: {str(e)}"
