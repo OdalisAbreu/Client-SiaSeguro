@@ -375,6 +375,7 @@ async def get_kyc(
                 RTRIM(c.cdireccas2) AS dirreccion_casa_2,
                 RTRIM(c.cdireccas3) AS dirreccion_casa_3,
                 RTRIM(c.ctipotel1) AS tipo_telefono,
+                RTRIM(tc.tipo) AS tipo_cliente,
                 RTRIM(c.cnumtel1) AS num_telefono,
                 RTRIM(c.ctipotel2) AS tipo_celular_1,
                 RTRIM(c.cnumtel2) AS num_celular_2,
@@ -403,6 +404,7 @@ async def get_kyc(
                 DATEDIFF(DAY, GETDATE(), cd.fechvencform) AS dias_hasta_vencimiento
             FROM imclientdet cd
             INNER JOIN imclient c ON c.ccodclien = cd.ccodclien
+            INNER JOIN imtipclient tc ON tc.imtipclientid = cd.imtipclientid
             WHERE cd.fechvencform IS NOT NULL
               AND cd.fechvencform >= '2020-01-01'
               AND cd.fechvencform <= '2025-12-31'

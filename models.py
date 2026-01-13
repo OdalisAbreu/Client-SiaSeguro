@@ -72,6 +72,7 @@ class KYCResponse(BaseModel):
     dirreccion_casa_2: Optional[str] = None
     dirreccion_casa_3: Optional[str] = None
     tipo_telefono: Optional[str] = None
+    tipo_cliente: Optional[str] = None
     num_telefono: Optional[str] = None
     tipo_celular_1: Optional[str] = None
     num_celular_2: Optional[str] = None
