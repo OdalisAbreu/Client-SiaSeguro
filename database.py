@@ -7,7 +7,7 @@ def get_db_connection():
     Crea y retorna una conexión a la base de datos SQL Server
     """
     connection_string = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+        f"DRIVER={{ODBC Driver 18 for SQL Server}};Encrypt=yes;TrustServerCertificate=yes;"
         f"SERVER={TARGET_SERVER};"
         f"DATABASE={TARGET_DATABASE};"
         f"UID={TARGET_USER};"
