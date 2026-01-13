@@ -10,6 +10,7 @@ class ClientResponse(BaseModel):
     nombre: Optional[str] = None
     apellido: Optional[str] = None
     cedula: Optional[str] = None
+    pasaporte: Optional[str] = None
     rnc: Optional[str] = None
     estatus: Optional[str] = None
     dirreccion_1: Optional[str] = None

@@ -148,6 +148,7 @@ async def get_clientes(
                 RTRIM(c.capellidos) AS apellido,
                 RTRIM(c.ccedula) AS cedula,
                 RTRIM(c.crnc) AS rnc,
+                RTRIM(c.cpasaporte) AS pasaporte,
                 RTRIM(c.cstatus) AS estatus,
                 RTRIM(c.cdirecofi1) AS dirreccion_1,
                 RTRIM(c.cdirecofi2) AS dirreccion_2,
