@@ -2,6 +2,7 @@ from fastapi import FastAPI, Query, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from typing import Optional, List
 from math import ceil
+import time
 import pyodbc
 import logging
 import traceback
@@ -114,8 +115,8 @@ async def get_clientes(
     crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
     ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
     tipo_cliente: Optional[str] = Query(None, description="Filtro por tipo de cliente"),
-    estatus: Optional[str] = Query(None, description="Filtro por estatus"),
     sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
     es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
     username: str = Depends(verify_credentials)
@@ -128,8 +129,8 @@ async def get_clientes(
     - crnc: RNC (búsqueda parcial)
     - ccedula: Cédula (búsqueda parcial)
     - cpasaporte: Pasaporte (búsqueda parcial)
+    - telefono: Número de teléfono (búsqueda parcial, si inicia con 1 se elimina) en numero_telefono
     - tipo_cliente: Tipo de cliente (exacto)
-    - estatus: Estatus del cliente (exacto)
     - sucursal: Código de sucursal (exacto)
     - es_prospecto: C=Cliente, P=Prospecto (exacto)
     """
@@ -140,45 +141,81 @@ async def get_clientes(
         
         # Construir la consulta base
         base_query = """
-            SELECT 
-                RTRIM(c.ccodclien) AS id_client, 
-                c.icodclien AS cod_client,
-                c.inumclient AS num_client,
-                RTRIM(c.cnomcliente) AS nombre,
-                RTRIM(c.capellidos) AS apellido,
+            SELECT
+                RTRIM(c.ccodclien) AS id_client,
+                cd.TipoTerceroTomador AS tipo_tercero_tomador,
+                cd.TipoTerceroAsegurado AS tipo_tercero_asegurado,
+                cd.TipoTerceroBeneficiario AS tipo_tercero_beneficiario,
+                cd.TipoTerceroAfianzado AS tipo_tercero_afianzado,
+                cd.TipoTerceroProveedor AS tipo_tercero_proveedor,
+                cd.TipoTerceroEmpleado AS tipo_tercero_empleado,
+                cd.TipoTerceroApoderado AS tipo_tercero_apoderado,
+                RTRIM(s.cdescripcion) AS sucursal,
                 RTRIM(c.ccedula) AS cedula,
+                cd.fechvencidentificacion AS fecha_vencimiento,
                 RTRIM(c.crnc) AS rnc,
                 RTRIM(c.cpasaporte) AS pasaporte,
-                RTRIM(c.cstatus) AS estatus,
-                RTRIM(c.cdirecofi1) AS dirreccion_1,
-                RTRIM(c.cdirecofi2) AS dirreccion_2,
-                RTRIM(c.cdirecofi3) AS dirreccion_3,
-                RTRIM(c.cdireccas1) AS dirreccion_casa_1,
-                RTRIM(c.cdireccas2) AS dirreccion_casa_2,
-                RTRIM(c.cdireccas3) AS dirreccion_casa_3,
-                RTRIM(c.ctipotel1) AS tipo_telefono,
-                RTRIM(c.ctipotel2) AS tipo_celular_1,
-                RTRIM(c.cemail1) AS email_1,
-                RTRIM(c.cemail2) AS email_2,
-                RTRIM(tc.tipo) AS tipo_cliente,
-                CAST(c.dfechnac AS DATE) AS fecha_nacimiento,
-                CAST(c.fechaCreacionCliente AS DATE) AS fecha_creacion, 
-                CAST(c.dfechingreso AS DATE) AS fecha_ingreso,
-                RTRIM(ac.cdescripcion) AS activa_comercial,
+                RTRIM(cd.registromercantil) AS registro_mercatil,
+                RTRIM(c.cnomcliente) AS nombre,
+                RTRIM(c.capellidos) AS apellido,
                 RTRIM(cd.sexo) AS sexo,
-                RTRIM(cd.profesion) AS profecion,
-                RTRIM(cd.cargo) AS cargo, 
+                CAST(c.dfechnac AS DATE) AS fecha_nacimiento,
+                RTRIM(cd.ciudadnac) AS ciudad_nacimiento,
+                RTRIM(cd.provincianac) AS porvincia_nacimiento,
+                RTRIM(n.cdescripcion) AS nacionalidad,
+                RTRIM(cd.profesion) AS profesion,
+                RTRIM(cd.cargo) AS ocupacion,
                 RTRIM(cd.empresa) AS empresa,
+                RTRIM(c.cdirecofi1) AS dirreccion_lavoral,
+                ci.cnombre AS ciudad_oficina,
+                RTRIM(po.cdescripcion) AS provincia_empresa,
+                RTRIM(c.cnumtel1) AS telefono_empresa,
+                RTRIM(c.cdireccas2) AS ciudad_recidencia,
+                RTRIM(pc.cdescripcion) AS provincia_recidiencia,
+                RTRIM(psc.cnombre) AS pais_recidencia,
+                RTRIM(c.ctipotel2) AS tipo_telefono,
+                RTRIM(c.cnumtel2) AS numero_telefono,
+                RTRIM(c.cdireccas1) AS dirreccion_recidencia,
+                RTRIM(barr.cdescripcion) AS sector,
+                RTRIM(c.cemail1) AS correo_electronico,
+                cd.AutorizoCorreo AS autorizo_envio_correo,
+                cd.AutorizoDomicilio AS autorizo_envio_domicilio,
+                cd.AutorizoOficinalPrincipal AS autorizo_envio_oficina_principal,
+                cd.AutorizoResidencia AS autorizo_envio_recidencia,
+                cd.AutorizoTrabajo AS autorizo_envio_trabajo,
+                RTRIM(ocp.ocupacion) AS actividad_economica, 
+                im.ingresos AS ingesos_mensuales,
+                cd.otrosing AS otros_ingresos,
+                cd.otrosing_acteconomica AS otros_ingresos_actividad,
+                cd.recursos AS recursos_publicos,
+                cd.recursosEspecifique AS recursos_publicos_descripcion,
+                cd.poderPublico AS poder_publico,
+                cd.poderPublicoEspecifique AS poder_publico_descripcion,
+                cd.influecia AS influencia_publica,
+                cd.influeciaEspecifique AS influencia_publica_descripcion,
+                cd.afirmativaAnterior AS afirmativo_familia,
+                cd.afirmativaEspecifique AS afirmativo_familia_descripcion,
+                cd.SolicitudPersonas AS solicitud_seguro_persona,
+                cd.SolicitudGenerales AS solicitud_seguro_generales,
+                cd.SolicitudFianzas AS solicitud_seguro_fianza,
+                cd.SolicitudEspecifique AS solicitud_seguro_otros,
                 ac.ponderacion AS ponderacion,
-                RTRIM(s.cdescripcion) AS sucursal,
                 RTRIM(c.cprospecto) AS es_procpecto,
-                RTRIM(c.cnumtel1) AS telefono_oficina,
-                RTRIM(c.cnumtel2) AS numero_celular    
+                RTRIM(tc.tipo) AS tipo_cliente
             FROM imclient c
             INNER JOIN imclientdet cd ON cd.ccodclien = c.ccodclien
+            LEFT JOIN imnacion n ON c.ccodnacion = n.ccodnacion
+            LEFT JOIN improvincia po ON po.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN improvincia pc ON pc.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN impais psc ON psc.ccodpais = c.ccodpaiscas
             LEFT JOIN imcliact ac ON ac.ccodcliact = c.ccodcliact
             LEFT JOIN imtipclient tc ON tc.imtipclientid = cd.imtipclientid
             LEFT JOIN imsucursal s ON s.ccodsucursal = cd.ccodsucursal
+            LEFT JOIN imcliingresos im ON im.imcliingresosid = cd.imcliingresosid
+            LEFT JOIN imciudad ci ON c.ccodciudadofi = ci.ccodciudad
+            LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
+            LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien =c.ccodclien
+			LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
             WHERE 1=1
         """
         
@@ -201,14 +238,18 @@ async def get_clientes(
         if cpasaporte:
             filter_conditions.append("c.cpasaporte LIKE ?")
             params.append(f"%{cpasaporte}%")
+
+        if telefono:
+            telefono_normalizado = telefono.strip()
+            if telefono_normalizado.startswith("1"):
+                telefono_normalizado = telefono_normalizado[1:]
+            if telefono_normalizado:
+                filter_conditions.append("c.cnumtel2 LIKE ?")
+                params.append(f"%{telefono_normalizado}%")
         
         if tipo_cliente:
             filter_conditions.append("tc.tipo = ?")
             params.append(tipo_cliente)
-        
-        if estatus:
-            filter_conditions.append("c.cstatus = ?")
-            params.append(estatus)
         
         if sucursal:
             filter_conditions.append("s.ccodsucursal = ?")
@@ -236,7 +277,7 @@ async def get_clientes(
             SELECT * FROM (
                 {base_query}
             ) as filtered
-            ORDER BY cod_client
+            ORDER BY id_client
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """
@@ -287,7 +328,6 @@ async def get_clientes(
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
                     "tipo_cliente": tipo_cliente,
-                    "estatus": estatus,
                     "sucursal": sucursal,
                     "es_prospecto": es_prospecto
                 },
@@ -314,7 +354,6 @@ async def get_clientes(
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
                     "tipo_cliente": tipo_cliente,
-                    "estatus": estatus,
                     "sucursal": sucursal,
                     "es_prospecto": es_prospecto
                 },
@@ -354,42 +393,73 @@ async def get_kyc(
     conn = None
     try:
         conn = get_db_connection()
+        conn.timeout = 30
         cursor = conn.cursor()
         
         # Construir la consulta base
         base_query = """
             SELECT
                 RTRIM(c.ccodclien) AS id_client,
-                c.icodclien AS cod_client,
-                c.inumclient AS num_client,
+                cd.TipoTerceroTomador AS tipo_tercero_tomador,
+                cd.TipoTerceroAsegurado AS tipo_tercero_asegurado,
+                cd.TipoTerceroBeneficiario AS tipo_tercero_beneficiario,
+                cd.TipoTerceroAfianzado AS tipo_tercero_afianzado,
+                cd.TipoTerceroProveedor AS tipo_tercero_proveedor,
+                cd.TipoTerceroEmpleado AS tipo_tercero_empleado,
+                cd.TipoTerceroApoderado AS tipo_tercero_apoderado,
+                RTRIM(s.cdescripcion) AS sucursal,
+                RTRIM(c.ccedula) AS cedula,
+                cd.fechvencidentificacion AS fecha_vencimiento,
+                RTRIM(c.crnc) AS rnc,
+                RTRIM(c.cpasaporte) AS pasaporte,
+                RTRIM(cd.registromercantil) AS registro_mercatil,
                 RTRIM(c.cnomcliente) AS nombre,
                 RTRIM(c.capellidos) AS apellido,
-                RTRIM(c.crnc) AS rnc,
-                RTRIM(c.cpasaporte) AS pasporrte,
-                c.dfechnac AS fecha_nacimiento,
-                RTRIM(c.ccedula) AS cedula,
-                RTRIM(c.cdirecofi1) AS dirreccion_1,
-                RTRIM(c.cdirecofi2) AS dirreccion_2,
-                RTRIM(c.cdirecofi3) AS dirreccion_3,
-                RTRIM(c.cdireccas1) AS dirreccion_casa_1,
-                RTRIM(c.cdireccas2) AS dirreccion_casa_2,
-                RTRIM(c.cdireccas3) AS dirreccion_casa_3,
-                RTRIM(c.ctipotel1) AS tipo_telefono,
+                RTRIM(cd.sexo) AS sexo,
+                CAST(c.dfechnac AS DATE) AS fecha_nacimiento,
+                RTRIM(cd.ciudadnac) AS ciudad_nacimiento,
+                RTRIM(cd.provincianac) AS porvincia_nacimiento,
+                RTRIM(n.cdescripcion) AS nacionalidad,
+                RTRIM(cd.profesion) AS profesion,
+                RTRIM(cd.cargo) AS ocupacion,
+                RTRIM(cd.empresa) AS empresa,
+                RTRIM(c.cdirecofi1) AS dirreccion_lavoral,
+                ci.cnombre AS ciudad_oficina,
+                RTRIM(po.cdescripcion) AS provincia_empresa,
+                RTRIM(c.cnumtel1) AS telefono_empresa,
+                RTRIM(c.cdireccas2) AS ciudad_recidencia,
+                RTRIM(pc.cdescripcion) AS provincia_recidiencia,
+                RTRIM(psc.cnombre) AS pais_recidencia,
+                RTRIM(c.ctipotel2) AS tipo_telefono,
+                RTRIM(c.cnumtel2) AS numero_telefono,
+                RTRIM(c.cdireccas1) AS dirreccion_recidencia,
+                RTRIM(barr.cdescripcion) AS sector,
+                RTRIM(c.cemail1) AS correo_electronico,
+                cd.AutorizoCorreo AS autorizo_envio_correo,
+                cd.AutorizoDomicilio AS autorizo_envio_domicilio,
+                cd.AutorizoOficinalPrincipal AS autorizo_envio_oficina_principal,
+                cd.AutorizoResidencia AS autorizo_envio_recidencia,
+                cd.AutorizoTrabajo AS autorizo_envio_trabajo,
+                RTRIM(ocp.ocupacion) AS actividad_economica, 
+                im.ingresos AS ingesos_mensuales,
+                cd.otrosing AS otros_ingresos,
+                cd.otrosing_acteconomica AS otros_ingresos_actividad,
+                cd.recursos AS recursos_publicos,
+                cd.recursosEspecifique AS recursos_publicos_descripcion,
+                cd.poderPublico AS poder_publico,
+                cd.poderPublicoEspecifique AS poder_publico_descripcion,
+                cd.influecia AS influencia_publica,
+                cd.influeciaEspecifique AS influencia_publica_descripcion,
+                cd.afirmativaAnterior AS afirmativo_familia,
+                cd.afirmativaEspecifique AS afirmativo_familia_descripcion,
+                cd.SolicitudPersonas AS solicitud_seguro_persona,
+                cd.SolicitudGenerales AS solicitud_seguro_generales,
+                cd.SolicitudFianzas AS solicitud_seguro_fianza,
+                cd.SolicitudEspecifique AS solicitud_seguro_otros,
+                ac.ponderacion AS ponderacion,
+                RTRIM(c.cprospecto) AS es_procpecto,
                 RTRIM(tc.tipo) AS tipo_cliente,
-                RTRIM(c.cnumtel1) AS num_telefono,
-                RTRIM(c.ctipotel2) AS tipo_celular_1,
-                RTRIM(c.cnumtel2) AS num_celular_2,
-                RTRIM(c.cemail1) AS email_1,
-                RTRIM(c.cemail2) AS email_2,
-                c.dfechingreso AS fecha_ingreso,
-                c.fechaCreacionCliente AS fecha_creacion_cliente,
-                c.fechaCreacionProspecto AS fecha_creacion_prospecto,
-                RTRIM(cd.ccodsucursal) AS ccodsucursal,
-                cd.fechformremitido AS fecha_remision_formulario,
-                cd.fechformrecibido AS fecha_recepcion_formulario,
                 cd.fechvencform AS fecha_venc_form,
-                cd.formremitido,
-                cd.formrecibido,
                 CASE
                     WHEN cd.fechformremitido IS NOT NULL 
                          AND cd.fechvencform >= GETDATE() THEN 'VIGENTE'
@@ -405,9 +475,18 @@ async def get_kyc(
             FROM imclientdet cd
             INNER JOIN imclient c ON c.ccodclien = cd.ccodclien
             INNER JOIN imtipclient tc ON tc.imtipclientid = cd.imtipclientid
-            WHERE cd.fechvencform IS NOT NULL
-              AND cd.fechvencform >= '2020-01-01'
-              AND cd.fechvencform <= '2025-12-31'
+            LEFT JOIN imnacion n ON c.ccodnacion = n.ccodnacion
+            LEFT JOIN improvincia po ON po.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN improvincia pc ON pc.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN impais psc ON psc.ccodpais = c.ccodpaiscas
+            LEFT JOIN imcliact ac ON ac.ccodcliact = c.ccodcliact
+            LEFT JOIN imsucursal s ON s.ccodsucursal = cd.ccodsucursal
+            LEFT JOIN imcliingresos im ON im.imcliingresosid = cd.imcliingresosid
+            LEFT JOIN imciudad ci ON c.ccodciudadofi = ci.ccodciudad
+            LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
+            LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien =c.ccodclien
+			LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
+            WHERE cd.fechvencform IS NOT NULL AND 1=1
         """
         
         # Construir condiciones de filtro
@@ -452,8 +531,20 @@ async def get_kyc(
                 SUM(CASE WHEN estado_formulario = 'SIN CLASIFICAR' THEN 1 ELSE 0 END) AS sin_clasificar
             FROM ({base_query}) as filtered
         """
+        start_time = time.time()
         cursor.execute(totales_query, params)
         totales_row = cursor.fetchone()
+        elapsed = time.time() - start_time
+        if elapsed > 5:
+            logger.warning(
+                "Consulta de totales KYC lenta",
+                extra={
+                    "endpoint": "/api/kyc",
+                    "query": "totales_query",
+                    "seconds": round(elapsed, 2),
+                    "filters": {"cnomcliente": cnomcliente, "crnc": crnc, "ccedula": ccedula, "cpasaporte": cpasaporte}
+                }
+            )
         totales = TotalesPorEstado(
             vigente=totales_row[0] or 0,
             vencido=totales_row[1] or 0,
@@ -465,8 +556,20 @@ async def get_kyc(
         # Consulta para contar el total de registros
         count_query = f"SELECT COUNT(*) as total FROM ({subquery}) as counted"
         count_params = params + estado_filter_params
+        start_time = time.time()
         cursor.execute(count_query, count_params)
         total = cursor.fetchone()[0]
+        elapsed = time.time() - start_time
+        if elapsed > 5:
+            logger.warning(
+                "Consulta de conteo KYC lenta",
+                extra={
+                    "endpoint": "/api/kyc",
+                    "query": "count_query",
+                    "seconds": round(elapsed, 2),
+                    "filters": {"cnomcliente": cnomcliente, "crnc": crnc, "ccedula": ccedula, "cpasaporte": cpasaporte, "estado_formulario": estado_formulario}
+                }
+            )
         
         # Calcular paginación
         total_pages = ceil(total / page_size) if total > 0 else 0
@@ -483,7 +586,21 @@ async def get_kyc(
         """
         
         params_with_pagination = count_params + [offset, page_size]
+        start_time = time.time()
         cursor.execute(paginated_query, params_with_pagination)
+        elapsed = time.time() - start_time
+        if elapsed > 5:
+            logger.warning(
+                "Consulta paginada KYC lenta",
+                extra={
+                    "endpoint": "/api/kyc",
+                    "query": "paginated_query",
+                    "seconds": round(elapsed, 2),
+                    "filters": {"cnomcliente": cnomcliente, "crnc": crnc, "ccedula": ccedula, "cpasaporte": cpasaporte, "estado_formulario": estado_formulario},
+                    "page": page,
+                    "page_size": page_size
+                }
+            )
         
         # Obtener nombres de columnas
         columns = [column[0] for column in cursor.description]

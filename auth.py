@@ -33,6 +33,5 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     
-    logger.info(f"Autenticación exitosa para usuario: {credentials.username}")
     return credentials.username
 
