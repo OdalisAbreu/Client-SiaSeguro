@@ -107,33 +107,20 @@ async def root():
     }
 
 
-@app.get("/api/clientes", response_model=PaginatedResponse)
-async def get_clientes(
-    page: int = Query(1, ge=1, description="Número de página"),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
-    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
-    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
-    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
-    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
-    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
-    tipo_cliente: Optional[str] = Query(None, description="Filtro por tipo de cliente"),
-    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
-    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
-    username: str = Depends(verify_credentials)
+async def _get_clientes_common(
+    endpoint_name: str,
+    page: int,
+    page_size: int,
+    cnomcliente: Optional[str],
+    crnc: Optional[str],
+    ccedula: Optional[str],
+    cpasaporte: Optional[str],
+    telefono: Optional[str],
+    tipo_cliente: Optional[str],
+    sucursal: Optional[str],
+    es_prospecto: Optional[str],
+    fixed_tipo_clientes: Optional[List[str]] = None
 ):
-    """
-    Obtiene todos los registros de clientes con paginación y filtros opcionales.
-    
-    Filtros disponibles:
-    - cnomcliente: Nombre del cliente (búsqueda parcial)
-    - crnc: RNC (búsqueda parcial)
-    - ccedula: Cédula (búsqueda parcial)
-    - cpasaporte: Pasaporte (búsqueda parcial)
-    - telefono: Número de teléfono (búsqueda parcial, si inicia con 1 se elimina) en numero_telefono
-    - tipo_cliente: Tipo de cliente (exacto)
-    - sucursal: Código de sucursal (exacto)
-    - es_prospecto: C=Cliente, P=Prospecto (exacto)
-    """
     conn = None
     try:
         conn = get_db_connection()
@@ -214,8 +201,8 @@ async def get_clientes(
             LEFT JOIN imcliingresos im ON im.imcliingresosid = cd.imcliingresosid
             LEFT JOIN imciudad ci ON c.ccodciudadofi = ci.ccodciudad
             LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
-            LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien =c.ccodclien
-			LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
+            LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien = c.ccodclien
+            LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
             WHERE 1=1
         """
         
@@ -247,7 +234,11 @@ async def get_clientes(
                 filter_conditions.append("c.cnumtel2 LIKE ?")
                 params.append(f"%{telefono_normalizado}%")
         
-        if tipo_cliente:
+        if fixed_tipo_clientes:
+            placeholders = ", ".join(["?"] * len(fixed_tipo_clientes))
+            filter_conditions.append(f"tc.tipo IN ({placeholders})")
+            params.extend(fixed_tipo_clientes)
+        elif tipo_cliente:
             filter_conditions.append("tc.tipo = ?")
             params.append(tipo_cliente)
         
@@ -314,10 +305,10 @@ async def get_clientes(
         
     except pyodbc.Error as e:
         logger.error(
-            f"Error de base de datos en endpoint /api/clientes",
+            f"Error de base de datos en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/api/clientes",
+                "endpoint": endpoint_name,
                 "error_type": "pyodbc.Error",
                 "error_message": str(e),
                 "query_params": {
@@ -327,7 +318,9 @@ async def get_clientes(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
+                    "telefono": telefono,
                     "tipo_cliente": tipo_cliente,
+                    "fixed_tipo_clientes": fixed_tipo_clientes,
                     "sucursal": sucursal,
                     "es_prospecto": es_prospecto
                 },
@@ -340,10 +333,10 @@ async def get_clientes(
         )
     except Exception as e:
         logger.error(
-            f"Error inesperado en endpoint /api/clientes",
+            f"Error inesperado en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/api/clientes",
+                "endpoint": endpoint_name,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
                 "query_params": {
@@ -353,7 +346,9 @@ async def get_clientes(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
+                    "telefono": telefono,
                     "tipo_cliente": tipo_cliente,
+                    "fixed_tipo_clientes": fixed_tipo_clientes,
                     "sucursal": sucursal,
                     "es_prospecto": es_prospecto
                 },
@@ -369,8 +364,114 @@ async def get_clientes(
             conn.close()
 
 
-@app.get("/api/kyc", response_model=PaginatedKYCResponse)
-async def get_kyc(
+@app.get("/api/clientes", response_model=PaginatedResponse)
+async def get_clientes(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    tipo_cliente: Optional[str] = Query(None, description="Filtro por tipo de cliente"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene todos los registros de clientes con paginación y filtros opcionales.
+    
+    Filtros disponibles:
+    - cnomcliente: Nombre del cliente (búsqueda parcial)
+    - crnc: RNC (búsqueda parcial)
+    - ccedula: Cédula (búsqueda parcial)
+    - cpasaporte: Pasaporte (búsqueda parcial)
+    - telefono: Número de teléfono (búsqueda parcial, si inicia con 1 se elimina) en numero_telefono
+    - tipo_cliente: Tipo de cliente (exacto)
+    - sucursal: Código de sucursal (exacto)
+    - es_prospecto: C=Cliente, P=Prospecto (exacto)
+    """
+    return await _get_clientes_common(
+        endpoint_name="/api/clientes",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=tipo_cliente,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto
+    )
+
+
+@app.get("/client/personales", response_model=PaginatedResponse)
+async def get_clientes_personales(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene clientes personales (PERSONAL, PERSONAL PREMIUM) con filtros y paginación.
+    """
+    return await _get_clientes_common(
+        endpoint_name="/client/personales",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=None,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto,
+        fixed_tipo_clientes=["PERSONAL", "PERSONAL PREMIUM"]
+    )
+
+
+@app.get("/client/corporativo", response_model=PaginatedResponse)
+async def get_clientes_corporativo(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene clientes corporativos (COMERCIAL, CORPORATIVOS) con filtros y paginación.
+    """
+    return await _get_clientes_common(
+        endpoint_name="/client/corporativo",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=None,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto,
+        fixed_tipo_clientes=["COMERCIAL", "CORPORATIVOS"]
+    )
+
+
+async def _get_kyc_common(
+    endpoint_name: str,
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
     cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
@@ -378,7 +479,7 @@ async def get_kyc(
     ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
     estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
-    username: str = Depends(verify_credentials)
+    fixed_tipo_clientes: Optional[List[str]] = None
 ):
     """
     Obtiene información de KYC (Know Your Customer) con formularios y estados.
@@ -508,6 +609,11 @@ async def get_kyc(
         if cpasaporte:
             filter_conditions.append("c.cpasaporte LIKE ?")
             params.append(f"%{cpasaporte}%")
+
+        if fixed_tipo_clientes:
+            placeholders = ", ".join(["?"] * len(fixed_tipo_clientes))
+            filter_conditions.append(f"tc.tipo IN ({placeholders})")
+            params.extend(fixed_tipo_clientes)
         
         # Agregar condiciones de filtro a la consulta
         if filter_conditions:
@@ -632,10 +738,10 @@ async def get_kyc(
         
     except pyodbc.Error as e:
         logger.error(
-            f"Error de base de datos en endpoint /api/kyc",
+            f"Error de base de datos en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/api/kyc",
+                "endpoint": endpoint_name,
                 "error_type": "pyodbc.Error",
                 "error_message": str(e),
                 "query_params": {
@@ -645,7 +751,8 @@ async def get_kyc(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
-                    "estado_formulario": estado_formulario
+                    "estado_formulario": estado_formulario,
+                    "fixed_tipo_clientes": fixed_tipo_clientes
                 },
                 "traceback": traceback.format_exc()
             }
@@ -656,10 +763,10 @@ async def get_kyc(
         )
     except Exception as e:
         logger.error(
-            f"Error inesperado en endpoint /api/kyc",
+            f"Error inesperado en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/api/kyc",
+                "endpoint": endpoint_name,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
                 "query_params": {
@@ -669,7 +776,8 @@ async def get_kyc(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
-                    "estado_formulario": estado_formulario
+                    "estado_formulario": estado_formulario,
+                    "fixed_tipo_clientes": fixed_tipo_clientes
                 },
                 "traceback": traceback.format_exc()
             }
@@ -681,6 +789,86 @@ async def get_kyc(
     finally:
         if conn:
             conn.close()
+
+
+@app.get("/api/kyc", response_model=PaginatedKYCResponse)
+async def get_kyc(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene información de KYC (Know Your Customer) con formularios y estados.
+    """
+    return await _get_kyc_common(
+        endpoint_name="/api/kyc",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        estado_formulario=estado_formulario
+    )
+
+
+@app.get("/kyc/personales", response_model=PaginatedKYCResponse)
+async def get_kyc_personales(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene KYC personales (PERSONAL, PERSONAL PREMIUM) con filtros y paginación.
+    """
+    return await _get_kyc_common(
+        endpoint_name="/kyc/personales",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        estado_formulario=estado_formulario,
+        fixed_tipo_clientes=["PERSONAL", "PERSONAL PREMIUM"]
+    )
+
+
+@app.get("/kyc/corporativos", response_model=PaginatedKYCResponse)
+async def get_kyc_corporativos(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene KYC corporativos (COMERCIAL, CORPORATIVOS) con filtros y paginación.
+    """
+    return await _get_kyc_common(
+        endpoint_name="/kyc/corporativos",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        estado_formulario=estado_formulario,
+        fixed_tipo_clientes=["COMERCIAL", "CORPORATIVOS"]
+    )
 
 
 @app.get("/api/logs", response_class=JSONResponse)
