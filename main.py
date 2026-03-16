@@ -243,7 +243,7 @@ async def _get_clientes_common(
             params.append(tipo_cliente)
         
         if sucursal:
-            filter_conditions.append("s.ccodsucursal = ?")
+            filter_conditions.append("s.cdescripcion = ?")
             params.append(sucursal)
         
         if es_prospecto:
@@ -374,7 +374,7 @@ async def get_clientes(
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
     telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
     tipo_cliente: Optional[str] = Query(None, description="Filtro por tipo de cliente"),
-    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal nombre"),
     es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
     username: str = Depends(verify_credentials)
 ):
@@ -388,7 +388,7 @@ async def get_clientes(
     - cpasaporte: Pasaporte (búsqueda parcial)
     - telefono: Número de teléfono (búsqueda parcial, si inicia con 1 se elimina) en numero_telefono
     - tipo_cliente: Tipo de cliente (exacto)
-    - sucursal: Código de sucursal (exacto)
+    - sucursal: Nombre de sucursal (exacto)
     - es_prospecto: C=Cliente, P=Prospecto (exacto)
     """
     return await _get_clientes_common(
@@ -587,7 +587,7 @@ async def _get_kyc_common(
             LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
             LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien =c.ccodclien
 			LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
-            WHERE cd.fechvencform IS NOT NULL AND 1=1
+            WHERE cd.fechvencform IS NOT NULL AND 1=1 AND cd.fechformremitido IS NOT NULL AND cd.fechvencform < GETDATE()
         """
         
         # Construir condiciones de filtro
@@ -614,6 +614,8 @@ async def _get_kyc_common(
             placeholders = ", ".join(["?"] * len(fixed_tipo_clientes))
             filter_conditions.append(f"tc.tipo IN ({placeholders})")
             params.extend(fixed_tipo_clientes)
+
+
         
         # Agregar condiciones de filtro a la consulta
         if filter_conditions:
@@ -825,11 +827,10 @@ async def get_kyc_personales(
     crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
     ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
-    estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
     username: str = Depends(verify_credentials)
 ):
     """
-    Obtiene KYC personales (PERSONAL, PERSONAL PREMIUM) con filtros y paginación.
+    Obtiene KYC personales (PERSONAL, PERSONAL PREMIUM) vencidos con filtros y paginación.
     """
     return await _get_kyc_common(
         endpoint_name="/kyc/personales",
@@ -839,7 +840,7 @@ async def get_kyc_personales(
         crnc=crnc,
         ccedula=ccedula,
         cpasaporte=cpasaporte,
-        estado_formulario=estado_formulario,
+        estado_formulario="VENCIDO",
         fixed_tipo_clientes=["PERSONAL", "PERSONAL PREMIUM"]
     )
 
