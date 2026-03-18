@@ -203,7 +203,7 @@ async def _get_clientes_common(
             LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
             LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien = c.ccodclien
             LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
-            WHERE 1=1
+            WHERE 1=1 AND c.cstatus = 'A'
         """
         
         # Construir condiciones de filtro
@@ -589,7 +589,7 @@ async def _get_kyc_common(
             LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
             LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien =c.ccodclien
 			LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
-            WHERE cd.fechvencform IS NOT NULL AND 1=1 AND cd.fechformremitido IS NOT NULL AND cd.fechvencform < GETDATE()
+            WHERE cd.fechvencform IS NOT NULL AND 1=1 AND cd.fechformremitido IS NOT NULL AND cd.fechvencform < GETDATE() AND c.cstatus = 'A'
         """
         
         # Construir condiciones de filtro
