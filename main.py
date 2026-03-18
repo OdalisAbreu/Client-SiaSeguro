@@ -478,6 +478,7 @@ async def _get_kyc_common(
     crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
     ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (Nombre)"),
     estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
     fixed_tipo_clientes: Optional[List[str]] = None
 ):
@@ -489,6 +490,7 @@ async def _get_kyc_common(
     - crnc: RNC (búsqueda parcial)
     - ccedula: Cédula (búsqueda parcial)
     - cpasaporte: Pasaporte (búsqueda parcial)
+    - sucursal: Nombre de sucursal (exacto)
     - estado_formulario: Estado del formulario (exacto)
     """
     conn = None
@@ -614,6 +616,10 @@ async def _get_kyc_common(
             placeholders = ", ".join(["?"] * len(fixed_tipo_clientes))
             filter_conditions.append(f"tc.tipo IN ({placeholders})")
             params.extend(fixed_tipo_clientes)
+
+        if sucursal:
+            filter_conditions.append("s.cdescripcion = ?")
+            params.append(sucursal)
 
 
         
@@ -753,6 +759,7 @@ async def _get_kyc_common(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
+                    "sucursal": sucursal,
                     "estado_formulario": estado_formulario,
                     "fixed_tipo_clientes": fixed_tipo_clientes
                 },
@@ -778,6 +785,7 @@ async def _get_kyc_common(
                     "crnc": crnc,
                     "ccedula": ccedula,
                     "cpasaporte": cpasaporte,
+                    "sucursal": sucursal,
                     "estado_formulario": estado_formulario,
                     "fixed_tipo_clientes": fixed_tipo_clientes
                 },
@@ -827,6 +835,7 @@ async def get_kyc_personales(
     crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
     ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
     cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
     username: str = Depends(verify_credentials)
 ):
     """
@@ -840,6 +849,7 @@ async def get_kyc_personales(
         crnc=crnc,
         ccedula=ccedula,
         cpasaporte=cpasaporte,
+        sucursal=sucursal,
         estado_formulario="VENCIDO",
         fixed_tipo_clientes=["PERSONAL", "PERSONAL PREMIUM"]
     )
