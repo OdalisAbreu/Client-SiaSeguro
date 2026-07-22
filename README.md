@@ -38,14 +38,14 @@ cp .env.example .env
 2. Editar el archivo `.env` con tus credenciales:
 ```env
 # Configuración de la base de datos SQL Server
-TARGET_SERVER=40.90.233.174,1433
-TARGET_DATABASE=SIAsegCaceres
-TARGET_USER=sa
-TARGET_PASSWORD=Admin2021*
+TARGET_SERVER=<host>,<puerto>
+TARGET_DATABASE=<nombre_base_datos>
+TARGET_USER=<usuario>
+TARGET_PASSWORD=<contraseña>
 
 # Configuración de autenticación API
-ADMIN_USERNAME=Admin
-ADMIN_PASSWORD=Caramelo#2030
+ADMIN_USERNAME=<usuario_admin>
+ADMIN_PASSWORD=<contraseña_admin>
 
 # Configuración de paginación
 DEFAULT_PAGE_SIZE=10
@@ -73,9 +73,7 @@ Una vez ejecutado el servidor, accede a:
 
 ## Autenticación
 
-La API utiliza autenticación HTTP Basic:
-- **Usuario**: Admin
-- **Contraseña**: Caramelo#2030
+La API utiliza autenticación HTTP Basic con las credenciales definidas en `ADMIN_USERNAME` y `ADMIN_PASSWORD` en tu archivo `.env`.
 
 En Swagger, haz clic en el botón "Authorize" e ingresa las credenciales.
 

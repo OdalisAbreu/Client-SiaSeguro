@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing import Optional, List
 from math import ceil
 import time
@@ -33,7 +34,30 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Exception handler global
+# Exception handlers
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Mantiene el status_code original de HTTPException (401/403/404/etc).
+    """
+    logger.warning(
+        f"HTTPException en {request.method} {request.url.path}",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "query_params": dict(request.query_params),
+            "status_code": exc.status_code,
+            "detail": str(exc.detail),
+        },
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """
@@ -124,8 +148,9 @@ async def _get_clientes_common(
     conn = None
     try:
         conn = get_db_connection()
+        conn.timeout = 30
         cursor = conn.cursor()
-        
+
         # Construir la consulta base
         base_query = """
             SELECT
@@ -170,7 +195,7 @@ async def _get_clientes_common(
                 cd.AutorizoOficinalPrincipal AS autorizo_envio_oficina_principal,
                 cd.AutorizoResidencia AS autorizo_envio_recidencia,
                 cd.AutorizoTrabajo AS autorizo_envio_trabajo,
-                RTRIM(ocp.ocupacion) AS actividad_economica, 
+                RTRIM(ocp.ocupacion) AS actividad_economica,
                 im.ingresos AS ingesos_mensuales,
                 cd.otrosing AS otros_ingresos,
                 cd.otrosing_acteconomica AS otros_ingresos_actividad,
@@ -472,14 +497,14 @@ async def get_clientes_corporativo(
 
 async def _get_kyc_common(
     endpoint_name: str,
-    page: int = Query(1, ge=1, description="Número de página"),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
-    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
-    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
-    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
-    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
-    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (Nombre)"),
-    estado_formulario: Optional[str] = Query(None, description="Filtro por estado del formulario (VIGENTE, VENCIDO, VENCIDO (NO REMITIDO), PENDIENTE DE REMISIÓN, SIN CLASIFICAR)"),
+    page: int,
+    page_size: int,
+    cnomcliente: Optional[str] = None,
+    crnc: Optional[str] = None,
+    ccedula: Optional[str] = None,
+    cpasaporte: Optional[str] = None,
+    sucursal: Optional[str] = None,
+    estado_formulario: Optional[str] = None,
     fixed_tipo_clientes: Optional[List[str]] = None
 ):
     """
@@ -1201,11 +1226,12 @@ async def view_logs_html(
                 if (endpoint) params.append('endpoint', endpoint);
                 
                 try {
-                    const response = await fetch(`/api/logs?${params.toString()}`, {
-                        headers: {
-                            'Authorization': 'Basic ' + btoa('Admin:Caramelo#2030')
-                        }
-                    });
+                    const response = await fetch(`/api/logs?${params.toString()}`);
+                    if (response.status === 401) {
+                        document.getElementById('logsContainer').innerHTML =
+                            '<div class="no-logs">Sesión no autorizada. Recarga la página e inicia sesión nuevamente.</div>';
+                        return;
+                    }
                     const data = await response.json();
                     
                     totalPages = data.total_pages;
