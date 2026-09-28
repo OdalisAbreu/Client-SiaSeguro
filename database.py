@@ -1,5 +1,10 @@
 import pyodbc
+import logging
+import traceback
+from fastapi import HTTPException
 from config import TARGET_SERVER, TARGET_DATABASE, TARGET_USER, TARGET_PASSWORD
+
+logger = logging.getLogger(__name__)
 
 
 def get_db_connection():
@@ -16,9 +21,30 @@ def get_db_connection():
     
     try:
         conn = pyodbc.connect(connection_string)
+        # Las columnas char/varchar de la BD guardan texto en Windows-1252
+        # (español con acentos). Sin esto, pyodbc intenta decodificar como
+        # UTF-8 y falla con bytes como 0xe9 ('é').
+        conn.setdecoding(pyodbc.SQL_CHAR, encoding="cp1252")
+        conn.setdecoding(pyodbc.SQL_WCHAR, encoding="utf-16-le")
+        conn.setencoding(encoding="cp1252")
         return conn
     except Exception as e:
-        raise Exception(f"Error al conectar con la base de datos: {str(e)}")
+        logger.error(
+            f"Error al conectar con la base de datos",
+            exc_info=True,
+            extra={
+                "server": TARGET_SERVER,
+                "database": TARGET_DATABASE,
+                "user": TARGET_USER,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al conectar con la base de datos: {str(e)}"
+        )
 
 
 def execute_query(query, params=None):

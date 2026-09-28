@@ -1,0 +1,378 @@
+from fastapi import APIRouter, Query, Depends, HTTPException
+from typing import Optional, List
+from math import ceil
+import pyodbc
+import logging
+import traceback
+from config import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from models.client import ClientResponse, PaginatedResponse
+from auth import verify_credentials
+from database import get_db_connection
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+async def _get_clientes_common(
+    endpoint_name: str,
+    page: int,
+    page_size: int,
+    cnomcliente: Optional[str],
+    crnc: Optional[str],
+    ccedula: Optional[str],
+    cpasaporte: Optional[str],
+    telefono: Optional[str],
+    tipo_cliente: Optional[str],
+    sucursal: Optional[str],
+    es_prospecto: Optional[str],
+    fixed_tipo_clientes: Optional[List[str]] = None
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        conn.timeout = 30
+        cursor = conn.cursor()
+
+        # Construir la consulta base
+        base_query = """
+            SELECT
+                RTRIM(c.ccodclien) AS id_client,
+                cd.TipoTerceroTomador AS tipo_tercero_tomador,
+                cd.TipoTerceroAsegurado AS tipo_tercero_asegurado,
+                cd.TipoTerceroBeneficiario AS tipo_tercero_beneficiario,
+                cd.TipoTerceroAfianzado AS tipo_tercero_afianzado,
+                cd.TipoTerceroProveedor AS tipo_tercero_proveedor,
+                cd.TipoTerceroEmpleado AS tipo_tercero_empleado,
+                cd.TipoTerceroApoderado AS tipo_tercero_apoderado,
+                RTRIM(s.cdescripcion) AS sucursal,
+                RTRIM(c.ccedula) AS cedula,
+                cd.fechvencidentificacion AS fecha_vencimiento,
+                RTRIM(c.crnc) AS rnc,
+                RTRIM(c.cpasaporte) AS pasaporte,
+                RTRIM(cd.registromercantil) AS registro_mercatil,
+                RTRIM(c.cnomcliente) AS nombre,
+                RTRIM(c.capellidos) AS apellido,
+                RTRIM(cd.sexo) AS sexo,
+                CAST(c.dfechnac AS DATE) AS fecha_nacimiento,
+                RTRIM(cd.ciudadnac) AS ciudad_nacimiento,
+                RTRIM(cd.provincianac) AS porvincia_nacimiento,
+                RTRIM(n.cdescripcion) AS nacionalidad,
+                RTRIM(cd.profesion) AS profesion,
+                RTRIM(cd.cargo) AS ocupacion,
+                RTRIM(cd.empresa) AS empresa,
+                RTRIM(c.cdirecofi1) AS dirreccion_lavoral,
+                ci.cnombre AS ciudad_oficina,
+                RTRIM(po.cdescripcion) AS provincia_empresa,
+                RTRIM(c.cnumtel1) AS telefono_empresa,
+                RTRIM(c.cdireccas2) AS ciudad_recidencia,
+                RTRIM(pc.cdescripcion) AS provincia_recidiencia,
+                RTRIM(psc.cnombre) AS pais_recidencia,
+                RTRIM(c.ctipotel2) AS tipo_telefono,
+                RTRIM(c.cnumtel2) AS numero_telefono,
+                RTRIM(c.cdireccas1) AS dirreccion_recidencia,
+                RTRIM(barr.cdescripcion) AS sector,
+                RTRIM(c.cemail1) AS correo_electronico,
+                cd.AutorizoCorreo AS autorizo_envio_correo,
+                cd.AutorizoDomicilio AS autorizo_envio_domicilio,
+                cd.AutorizoOficinalPrincipal AS autorizo_envio_oficina_principal,
+                cd.AutorizoResidencia AS autorizo_envio_recidencia,
+                cd.AutorizoTrabajo AS autorizo_envio_trabajo,
+                RTRIM(ocp.ocupacion) AS actividad_economica,
+                im.ingresos AS ingesos_mensuales,
+                cd.otrosing AS otros_ingresos,
+                cd.otrosing_acteconomica AS otros_ingresos_actividad,
+                cd.recursos AS recursos_publicos,
+                cd.recursosEspecifique AS recursos_publicos_descripcion,
+                cd.poderPublico AS poder_publico,
+                cd.poderPublicoEspecifique AS poder_publico_descripcion,
+                cd.influecia AS influencia_publica,
+                cd.influeciaEspecifique AS influencia_publica_descripcion,
+                cd.afirmativaAnterior AS afirmativo_familia,
+                cd.afirmativaEspecifique AS afirmativo_familia_descripcion,
+                cd.SolicitudPersonas AS solicitud_seguro_persona,
+                cd.SolicitudGenerales AS solicitud_seguro_generales,
+                cd.SolicitudFianzas AS solicitud_seguro_fianza,
+                cd.SolicitudEspecifique AS solicitud_seguro_otros,
+                ac.ponderacion AS ponderacion,
+                RTRIM(c.cprospecto) AS es_procpecto,
+                RTRIM(tc.tipo) AS tipo_cliente
+            FROM imclient c
+            INNER JOIN imclientdet cd ON cd.ccodclien = c.ccodclien
+            LEFT JOIN imnacion n ON c.ccodnacion = n.ccodnacion
+            LEFT JOIN improvincia po ON po.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN improvincia pc ON pc.ccodprovincia = c.ccodprovinciaofi
+            LEFT JOIN impais psc ON psc.ccodpais = c.ccodpaiscas
+            LEFT JOIN imcliact ac ON ac.ccodcliact = c.ccodcliact
+            LEFT JOIN imtipclient tc ON tc.imtipclientid = cd.imtipclientid
+            LEFT JOIN imsucursal s ON s.ccodsucursal = cd.ccodsucursal
+            LEFT JOIN imcliingresos im ON im.imcliingresosid = cd.imcliingresosid
+            LEFT JOIN imciudad ci ON c.ccodciudadofi = ci.ccodciudad
+            LEFT JOIN imbarrioparaje barr ON barr.ccodbarrioparaje = c.ccodbarrioparajecas
+            LEFT JOIN imcliocupacion cliocp ON cliocp.ccodclien = c.ccodclien
+            LEFT JOIN imocupacion ocp ON ocp.imocupacionid = cliocp.imocupacionid
+            WHERE 1=1 AND c.cstatus = 'A'
+        """
+        
+        # Construir condiciones de filtro
+        filter_conditions = []
+        params = []
+        
+        if cnomcliente:
+            filter_conditions.append("c.cnomcliente LIKE ?")
+            params.append(f"%{cnomcliente}%")
+        
+        if crnc:
+            filter_conditions.append("c.crnc LIKE ?")
+            params.append(f"%{crnc}%")
+        
+        if ccedula:
+            filter_conditions.append("c.ccedula LIKE ?")
+            params.append(f"%{ccedula}%")
+        
+        if cpasaporte:
+            filter_conditions.append("c.cpasaporte LIKE ?")
+            params.append(f"%{cpasaporte}%")
+
+        if telefono:
+            telefono_normalizado = telefono.strip()
+            if telefono_normalizado.startswith("1"):
+                telefono_normalizado = telefono_normalizado[1:]
+            if telefono_normalizado:
+                filter_conditions.append("c.cnumtel2 LIKE ?")
+                params.append(f"%{telefono_normalizado}%")
+        
+        if fixed_tipo_clientes:
+            placeholders = ", ".join(["?"] * len(fixed_tipo_clientes))
+            filter_conditions.append(f"tc.tipo IN ({placeholders})")
+            params.extend(fixed_tipo_clientes)
+        elif tipo_cliente:
+            filter_conditions.append("tc.tipo = ?")
+            params.append(tipo_cliente)
+        
+        if sucursal:
+            filter_conditions.append("s.cdescripcion = ?")
+            params.append(sucursal)
+        
+        if es_prospecto:
+            filter_conditions.append("c.cprospecto = ?")
+            params.append(es_prospecto.upper())
+        
+        # Agregar condiciones de filtro a la consulta
+        if filter_conditions:
+            base_query += " AND " + " AND ".join(filter_conditions)
+        
+        # Consulta para contar el total de registros
+        count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as filtered"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+        
+        # Calcular paginación
+        total_pages = ceil(total / page_size) if total > 0 else 0
+        offset = (page - 1) * page_size
+        
+        # Consulta paginada
+        paginated_query = f"""
+            SELECT * FROM (
+                {base_query}
+            ) as filtered
+            ORDER BY id_client
+            OFFSET ? ROWS
+            FETCH NEXT ? ROWS ONLY
+        """
+        
+        params_with_pagination = params + [offset, page_size]
+        cursor.execute(paginated_query, params_with_pagination)
+        
+        # Obtener nombres de columnas
+        columns = [column[0] for column in cursor.description]
+        
+        # Obtener resultados
+        results = cursor.fetchall()
+        
+        # Convertir a lista de diccionarios
+        data = []
+        for row in results:
+            row_dict = {}
+            for i, col in enumerate(columns):
+                value = row[i]
+                # Eliminar espacios en blanco al final de campos de texto
+                if value is not None and isinstance(value, str):
+                    value = value.rstrip()
+                # Convertir None a None explícitamente
+                row_dict[col] = value if value is not None else None
+            data.append(ClientResponse(**row_dict))
+        
+        return PaginatedResponse(
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            data=data
+        )
+        
+    except pyodbc.Error as e:
+        logger.error(
+            f"Error de base de datos en endpoint {endpoint_name}",
+            exc_info=True,
+            extra={
+                "endpoint": endpoint_name,
+                "error_type": "pyodbc.Error",
+                "error_message": str(e),
+                "query_params": {
+                    "page": page,
+                    "page_size": page_size,
+                    "cnomcliente": cnomcliente,
+                    "crnc": crnc,
+                    "ccedula": ccedula,
+                    "cpasaporte": cpasaporte,
+                    "telefono": telefono,
+                    "tipo_cliente": tipo_cliente,
+                    "fixed_tipo_clientes": fixed_tipo_clientes,
+                    "sucursal": sucursal,
+                    "es_prospecto": es_prospecto
+                },
+                "traceback": traceback.format_exc()
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en la base de datos: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Error inesperado en endpoint {endpoint_name}",
+            exc_info=True,
+            extra={
+                "endpoint": endpoint_name,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "query_params": {
+                    "page": page,
+                    "page_size": page_size,
+                    "cnomcliente": cnomcliente,
+                    "crnc": crnc,
+                    "ccedula": ccedula,
+                    "cpasaporte": cpasaporte,
+                    "telefono": telefono,
+                    "tipo_cliente": tipo_cliente,
+                    "fixed_tipo_clientes": fixed_tipo_clientes,
+                    "sucursal": sucursal,
+                    "es_prospecto": es_prospecto
+                },
+                "traceback": traceback.format_exc()
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error inesperado: {str(e)}"
+        )
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/api/clientes", response_model=PaginatedResponse)
+async def get_clientes(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    tipo_cliente: Optional[str] = Query(None, description="Filtro por tipo de cliente"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal nombre"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene todos los registros de clientes con paginación y filtros opcionales.
+    
+    Filtros disponibles:
+    - cnomcliente: Nombre del cliente (búsqueda parcial)
+    - crnc: RNC (búsqueda parcial)
+    - ccedula: Cédula (búsqueda parcial)
+    - cpasaporte: Pasaporte (búsqueda parcial)
+    - telefono: Número de teléfono (búsqueda parcial, si inicia con 1 se elimina) en numero_telefono
+    - tipo_cliente: Tipo de cliente (exacto)
+    - sucursal: Nombre de sucursal (exacto)
+    - es_prospecto: C=Cliente, P=Prospecto (exacto)
+    """
+    return await _get_clientes_common(
+        endpoint_name="/api/clientes",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=tipo_cliente,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto
+    )
+
+
+@router.get("/client/personales", response_model=PaginatedResponse)
+async def get_clientes_personales(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene clientes personales (PERSONAL, PERSONAL PREMIUM) con filtros y paginación.
+    """
+    return await _get_clientes_common(
+        endpoint_name="/client/personales",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=None,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto,
+        fixed_tipo_clientes=["PERSONAL", "PERSONAL PREMIUM"]
+    )
+
+
+@router.get("/client/corporativo", response_model=PaginatedResponse)
+async def get_clientes_corporativo(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre de cliente"),
+    crnc: Optional[str] = Query(None, description="Filtro parcial por RNC"),
+    ccedula: Optional[str] = Query(None, description="Filtro parcial por cédula"),
+    cpasaporte: Optional[str] = Query(None, description="Filtro parcial por pasaporte"),
+    telefono: Optional[str] = Query(None, description="Filtro por número de teléfono (numero_telefono)"),
+    sucursal: Optional[str] = Query(None, description="Filtro por sucursal (código)"),
+    es_prospecto: Optional[str] = Query(None, description="Filtro por tipo: C=Cliente, P=Prospecto"),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene clientes corporativos (COMERCIAL, CORPORATIVOS) con filtros y paginación.
+    """
+    return await _get_clientes_common(
+        endpoint_name="/client/corporativo",
+        page=page,
+        page_size=page_size,
+        cnomcliente=cnomcliente,
+        crnc=crnc,
+        ccedula=ccedula,
+        cpasaporte=cpasaporte,
+        telefono=telefono,
+        tipo_cliente=None,
+        sucursal=sucursal,
+        es_prospecto=es_prospecto,
+        fixed_tipo_clientes=["COMERCIAL", "CORPORATIVOS"]
+    )
