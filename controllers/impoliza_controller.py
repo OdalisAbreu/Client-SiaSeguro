@@ -32,6 +32,7 @@ async def get_impolizas(
 ):
     """
     Obtiene todos los campos de la tabla impoliza con paginación.
+    Solo devuelve la versión actual de cada póliza (lversionactual = 1).
 
     Filtros:
     - activa: 1 = activas (ccodpolsta = '00000001'), 0 = no activas, en blanco = todas
@@ -58,7 +59,8 @@ async def get_impolizas(
         conn.timeout = 30
         cursor = conn.cursor()
 
-        base_query = "SELECT * FROM impoliza WHERE 1=1"
+        # Solo la versión actual de cada póliza
+        base_query = "SELECT * FROM impoliza WHERE lversionactual = 1"
         params = []
 
         if activa_flag is not None:
