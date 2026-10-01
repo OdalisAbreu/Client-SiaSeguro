@@ -8,6 +8,7 @@ from config import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from models.imclient import ImClientConTipo, PaginatedImClientConTipoResponse
 from auth import verify_credentials
 from database import get_db_connection
+from controllers.impoliza_controller import POLIZA_ESTADO_ACTIVA
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,8 @@ async def get_imclientes(
     """
     Obtiene todos los campos de la tabla imclient con paginación, incluyendo
     el tipo de cliente (imtipclient) y la sucursal (imsucursal), ambos
-    obtenidos a través de imclientdet.
+    obtenidos a través de imclientdet, y la cantidad de pólizas activas del
+    cliente (impoliza con lversionactual = 1 y ccodpolsta = '00000001').
 
     Filtros:
     - activo: 1 = activos (cstatus = 'A'), 0 = inactivos, en blanco = todos
@@ -75,14 +77,23 @@ async def get_imclientes(
                 cd.imtipclientid AS imtipclientid,
                 RTRIM(tc.tipo) AS tipo_cliente,
                 RTRIM(cd.ccodsucursal) AS ccodsucursal,
-                RTRIM(s.cdescripcion) AS sucursal
+                RTRIM(s.cdescripcion) AS sucursal,
+                ISNULL(pc.cantidad_polizas, 0) AS cantidad_polizas
             FROM imclient c
             LEFT JOIN imclientdet cd ON cd.ccodclien = c.ccodclien
             LEFT JOIN imtipclient tc ON tc.imtipclientid = cd.imtipclientid
             LEFT JOIN imsucursal s ON s.ccodsucursal = cd.ccodsucursal
+            -- Cantidad de pólizas activas por cliente (versión actual y ccodpolsta activo)
+            LEFT JOIN (
+                SELECT ccodclien, COUNT(*) AS cantidad_polizas
+                FROM impoliza
+                WHERE lversionactual = 1
+                  AND ccodpolsta = ?
+                GROUP BY ccodclien
+            ) pc ON pc.ccodclien = c.ccodclien
             WHERE 1=1
         """
-        params = []
+        params = [POLIZA_ESTADO_ACTIVA]
 
         if activo_flag is not None:
             if activo_flag:

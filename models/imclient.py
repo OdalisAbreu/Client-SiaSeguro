@@ -118,6 +118,7 @@ class ImClientConTipo(ImClient):
     tipo_cliente: Optional[str] = None                  # imtipclient.tipo
     ccodsucursal: Optional[str] = None                  # imclientdet.ccodsucursal
     sucursal: Optional[str] = None                      # imsucursal.cdescripcion
+    cantidad_polizas: int = 0                           # COUNT(impoliza) activas: lversionactual = 1 y ccodpolsta = '00000001'
 
 
 class PaginatedImClientConTipoResponse(BaseModel):
