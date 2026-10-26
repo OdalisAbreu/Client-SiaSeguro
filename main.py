@@ -4,7 +4,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
 import traceback
 from datetime import datetime
-from controllers import imclient_controller, impoliza_controller, client_controller, kyc_controller, logs_controller
+from controllers import imclient_controller, impoliza_controller, client_controller, kyc_controller, logs_controller, reporte_produccion_controller, reporte_comisiones_recibo_controller
 
 # Configurar logging
 logging.basicConfig(
@@ -20,12 +20,24 @@ logger = logging.getLogger(__name__)
 tags_metadata = [
     {
         "name": "Clientes",
-        "description": "Consulta de clientes de la tabla imclient con todos sus campos.",
+        "description": "Consulta de clientes de la tabla imclient (cprospecto = 'C') con todos sus campos.",
+    },
+    {
+        "name": "Prospectos",
+        "description": "Consulta de prospectos de la tabla imclient (cprospecto = 'P') con todos sus campos.",
     },
     {
         "name": "Polizas",
         "description": "Consulta de pólizas de la tabla impoliza con todos sus campos. "
                        "Una póliza activa es la que tiene ccodpolsta = '00000001'.",
+    },
+    {
+        "name": "Reportes",
+        "description": "Reportes operativos. Reporte de Producción: una fila por factura (imfact) "
+                       "en un rango de fechas. Los campos prima_neta_cobrada, creditos_aplicados, "
+                       "comision_liquidada y sobrecomis_liquidada son ESTIMADOS, pendientes de validar. "
+                       "Reporte de Comisiones por Recibo Multi Vendor: una fila por recibo x coaseguradora; "
+                       "agente_poliza y porcentaje_incentivo_agente no están validados.",
     },
 ]
 
@@ -41,6 +53,8 @@ app.include_router(impoliza_controller.router)
 app.include_router(client_controller.router)
 app.include_router(kyc_controller.router)
 app.include_router(logs_controller.router)
+app.include_router(reporte_produccion_controller.router)
+app.include_router(reporte_comisiones_recibo_controller.router)
 
 # Exception handlers
 @app.exception_handler(StarletteHTTPException)

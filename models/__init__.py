@@ -8,6 +8,16 @@ from models.imclient import (
     PaginatedImClientConTipoResponse,
 )
 from models.impoliza import ImPoliza, PaginatedImPolizaResponse
+from models.reporte_produccion import (
+    ReporteProduccionRow,
+    ReporteProduccionFiltros,
+    ReporteProduccionResponse,
+)
+from models.reporte_comisiones_recibo import (
+    ReporteComisionesReciboRow,
+    ReporteComisionesReciboFiltros,
+    ReporteComisionesReciboResponse,
+)
 
 __all__ = [
     "Credentials",
@@ -22,4 +32,10 @@ __all__ = [
     "PaginatedImClientConTipoResponse",
     "ImPoliza",
     "PaginatedImPolizaResponse",
+    "ReporteProduccionRow",
+    "ReporteProduccionFiltros",
+    "ReporteProduccionResponse",
+    "ReporteComisionesReciboRow",
+    "ReporteComisionesReciboFiltros",
+    "ReporteComisionesReciboResponse",
 ]

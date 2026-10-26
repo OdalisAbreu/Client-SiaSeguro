@@ -14,39 +14,37 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Valores de imclient.cprospecto
+CPROSPECTO_CLIENTE = "C"
+CPROSPECTO_PROSPECTO = "P"
 
-@router.get("/clientes", response_model=PaginatedImClientConTipoResponse, tags=["Clientes"])
-async def get_imclientes(
-    page: int = Query(1, ge=1, description="Número de página"),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
-    activo: Optional[str] = Query(
-        None,
-        description="Filtro por estado. 1 = activos (cstatus = 'A'), 0 = inactivos (cstatus <> 'A'), en blanco = todos"
-    ),
-    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre del cliente"),
-    tipo_cliente: Optional[str] = Query(
-        None,
-        description="Filtro por tipo de cliente (exacto). Valores: PERSONAL, COMERCIAL, "
-                    "BANCASEGUROS, PERSONALES PREMIUM, CORPORATIVOS, GUBERNAMENTALES"
-    ),
-    sucursal: Optional[str] = Query(
-        None,
-        description="Filtro por sucursal (exacto, por nombre). Valores: Principal, Romana, Punta Cana"
-    ),
-    username: str = Depends(verify_credentials)
-):
-    """
-    Obtiene todos los campos de la tabla imclient con paginación, incluyendo
-    el tipo de cliente (imtipclient) y la sucursal (imsucursal), ambos
-    obtenidos a través de imclientdet, y la cantidad de pólizas activas del
-    cliente (impoliza con lversionactual = 1 y ccodpolsta = '00000001').
+DESC_ACTIVO = "Filtro por estado. 1 = activos (cstatus = 'A'), 0 = inactivos (cstatus <> 'A'), en blanco = todos"
+DESC_TIPO_CLIENTE = (
+    "Filtro por tipo de cliente (exacto). Valores: PERSONAL, COMERCIAL, "
+    "BANCASEGUROS, PERSONALES PREMIUM, CORPORATIVOS, GUBERNAMENTALES"
+)
+DESC_SUCURSAL = "Filtro por sucursal (exacto, por nombre). Valores: Principal, Romana, Punta Cana"
 
-    Filtros:
-    - activo: 1 = activos (cstatus = 'A'), 0 = inactivos, en blanco = todos
-    - cnomcliente: nombre del cliente (búsqueda parcial)
-    - tipo_cliente: tipo de cliente (exacto)
-    - sucursal: nombre de la sucursal (exacto)
+
+async def _consultar_imclient(
+    endpoint_name: str,
+    cprospecto: str,
+    page: int,
+    page_size: int,
+    activo: Optional[str],
+    cnomcliente: Optional[str],
+    tipo_cliente: Optional[str],
+    sucursal: Optional[str],
+) -> PaginatedImClientConTipoResponse:
     """
+    Lógica común para /clientes y /prospectos.
+    Siempre filtra por imclient.cprospecto (C = cliente, P = prospecto).
+    """
+    query_params_log = {
+        "page": page, "page_size": page_size, "activo": activo,
+        "cnomcliente": cnomcliente, "tipo_cliente": tipo_cliente,
+        "sucursal": sucursal, "cprospecto": cprospecto,
+    }
     conn = None
     try:
         # Normalizar el filtro de estado: 1 = activos, 0 = inactivos, en blanco = todos
@@ -69,7 +67,7 @@ async def get_imclientes(
 
         # Ni el tipo de cliente ni la sucursal estan en imclient: se obtienen
         # encadenando imclient -> imclientdet -> imtipclient / imsucursal.
-        # Se usa LEFT JOIN para no perder clientes sin detalle, sin tipo
+        # Se usa LEFT JOIN para no perder registros sin detalle, sin tipo
         # o sin sucursal asignada.
         base_query = """
             SELECT
@@ -91,17 +89,16 @@ async def get_imclientes(
                   AND ccodpolsta = ?
                 GROUP BY ccodclien
             ) pc ON pc.ccodclien = c.ccodclien
-            WHERE 1=1
+            WHERE c.cprospecto = ?
         """
-        params = [POLIZA_ESTADO_ACTIVA]
+        params = [POLIZA_ESTADO_ACTIVA, cprospecto]
 
         if activo_flag is not None:
             if activo_flag:
                 base_query += " AND c.cstatus = ?"
-                params.append("A")
             else:
                 base_query += " AND c.cstatus <> ?"
-                params.append("A")
+            params.append("A")
 
         if cnomcliente:
             base_query += " AND c.cnomcliente LIKE ?"
@@ -155,28 +152,30 @@ async def get_imclientes(
             data=data
         )
 
+    except HTTPException:
+        raise
     except pyodbc.Error as e:
         logger.error(
-            "Error de base de datos en endpoint /clientes",
+            f"Error de base de datos en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/clientes",
+                "endpoint": endpoint_name,
                 "error_type": "pyodbc.Error",
                 "error_message": str(e),
-                "query_params": {"page": page, "page_size": page_size, "activo": activo, "cnomcliente": cnomcliente, "tipo_cliente": tipo_cliente, "sucursal": sucursal},
+                "query_params": query_params_log,
                 "traceback": traceback.format_exc()
             }
         )
         raise HTTPException(status_code=500, detail=f"Error en la base de datos: {str(e)}")
     except Exception as e:
         logger.error(
-            "Error inesperado en endpoint /clientes",
+            f"Error inesperado en endpoint {endpoint_name}",
             exc_info=True,
             extra={
-                "endpoint": "/clientes",
+                "endpoint": endpoint_name,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
-                "query_params": {"page": page, "page_size": page_size, "activo": activo, "cnomcliente": cnomcliente, "tipo_cliente": tipo_cliente, "sucursal": sucursal},
+                "query_params": query_params_log,
                 "traceback": traceback.format_exc()
             }
         )
@@ -184,3 +183,69 @@ async def get_imclientes(
     finally:
         if conn:
             conn.close()
+
+
+@router.get("/clientes", response_model=PaginatedImClientConTipoResponse, tags=["Clientes"])
+async def get_imclientes(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    activo: Optional[str] = Query(None, description=DESC_ACTIVO),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre del cliente"),
+    tipo_cliente: Optional[str] = Query(None, description=DESC_TIPO_CLIENTE),
+    sucursal: Optional[str] = Query(None, description=DESC_SUCURSAL),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene los CLIENTES (imclient.cprospecto = 'C') con todos sus campos y
+    paginación, incluyendo el tipo de cliente (imtipclient), la sucursal
+    (imsucursal) y la cantidad de pólizas activas.
+
+    Filtros:
+    - activo: 1 = activos (cstatus = 'A'), 0 = inactivos, en blanco = todos
+    - cnomcliente: nombre del cliente (búsqueda parcial)
+    - tipo_cliente: tipo de cliente (exacto)
+    - sucursal: nombre de la sucursal (exacto)
+    """
+    return await _consultar_imclient(
+        endpoint_name="/clientes",
+        cprospecto=CPROSPECTO_CLIENTE,
+        page=page,
+        page_size=page_size,
+        activo=activo,
+        cnomcliente=cnomcliente,
+        tipo_cliente=tipo_cliente,
+        sucursal=sucursal,
+    )
+
+
+@router.get("/prospectos", response_model=PaginatedImClientConTipoResponse, tags=["Prospectos"])
+async def get_improspectos(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+    activo: Optional[str] = Query(None, description=DESC_ACTIVO),
+    cnomcliente: Optional[str] = Query(None, description="Filtro parcial por nombre del prospecto"),
+    tipo_cliente: Optional[str] = Query(None, description=DESC_TIPO_CLIENTE),
+    sucursal: Optional[str] = Query(None, description=DESC_SUCURSAL),
+    username: str = Depends(verify_credentials)
+):
+    """
+    Obtiene los PROSPECTOS (imclient.cprospecto = 'P') con todos sus campos y
+    paginación, incluyendo el tipo de cliente (imtipclient), la sucursal
+    (imsucursal) y la cantidad de pólizas activas.
+
+    Filtros:
+    - activo: 1 = activos (cstatus = 'A'), 0 = inactivos, en blanco = todos
+    - cnomcliente: nombre del prospecto (búsqueda parcial)
+    - tipo_cliente: tipo de cliente (exacto)
+    - sucursal: nombre de la sucursal (exacto)
+    """
+    return await _consultar_imclient(
+        endpoint_name="/prospectos",
+        cprospecto=CPROSPECTO_PROSPECTO,
+        page=page,
+        page_size=page_size,
+        activo=activo,
+        cnomcliente=cnomcliente,
+        tipo_cliente=tipo_cliente,
+        sucursal=sucursal,
+    )
