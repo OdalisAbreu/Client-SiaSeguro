@@ -4,9 +4,11 @@ from datetime import date, datetime
 from decimal import Decimal
 
 
+# TODO: revalidar cuando llegue el backup actualizado de la BD (y quitar este aviso si cuadra).
 ADVERTENCIA_CAMPOS_ESTIMADOS = (
     "prima_neta_cobrada, creditos_aplicados, comision_liquidada y sobrecomis_liquidada "
-    "son valores estimados, pendientes de validar contra el reporte original"
+    "se calculan por recibo (imrecpol, sin anulados); cuadran en facturas de un solo recibo "
+    "pero están pendientes de revalidar en facturas con cuotas/endosos múltiples"
 )
 
 
@@ -36,11 +38,14 @@ class ReporteProduccionRow(BaseModel):
     prima_neta: Optional[Decimal] = None                    # imfact.yprimaneta
     porcentaje_comis: Optional[float] = None                # imfact.bporcomisprod
     comision: Optional[Decimal] = None                      # ROUND(prima_neta * porcentaje_comis / 100, 2)
-    prima_neta_cobrada: Optional[Decimal] = None            # ESTIMADO
-    creditos_aplicados: Optional[Decimal] = None            # ESTIMADO
-    comision_liquidada: Optional[Decimal] = None            # ESTIMADO
+    # Campos de cobros por recibo (imrecpol + imrecibo, sin anulados).
+    # TODO: revalidar cuando llegue el backup actualizado de la BD.
+    porcentaje_comis_recibo: Optional[float] = None         # imrecpol.bporcomis del recibo más reciente
+    prima_neta_cobrada: Optional[Decimal] = None            # SUM(yaplicado)
+    creditos_aplicados: Optional[Decimal] = None            # SUM(yaplicado) de recibos NOTCRED
+    comision_liquidada: Optional[Decimal] = None            # SUM(ycomisrecibida)
     porcentaje_sobrecomis: Optional[Decimal] = None         # imfact.ysobrecomision
-    sobrecomis_liquidada: Optional[Decimal] = None          # ESTIMADO
+    sobrecomis_liquidada: Optional[Decimal] = None          # SUM por recibo, fórmula de dos ramas
     fecha_ingreso_cliente: Optional[datetime] = None        # imclient.dfechingreso
     frecuencia_facturacion: Optional[str] = None            # imfrefac.cdescripcion
     fecha_emision_poliza: Optional[datetime] = None         # impoliza.dfechemis

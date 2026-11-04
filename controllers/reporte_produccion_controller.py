@@ -3,8 +3,8 @@ Reporte de Producción: una fila por factura (imfact) en un rango de fechas.
 
 Estructura:
 1. Query base (SQL validado) con los datos de factura, póliza, cliente y catálogos.
-2. Campos ESTIMADO (imrecpol / t_creditos): se calculan aparte, solo para las
-   facturas de la página, en funciones aisladas (ver sección "CAMPOS ESTIMADO").
+2. Campos de cobros (imrecpol + imrecibo): una sola query para las facturas de
+   la página y cálculo en memoria (ver sección "CAMPOS DE COBROS POR RECIBO").
 3. 14 roles de personal asignado: una sola query para los clientes de la página
    y "pivot" en memoria (evita 14 subqueries correlacionadas por fila).
 """
@@ -123,103 +123,94 @@ def _to_decimal(value) -> Optional[Decimal]:
 
 
 # ---------------------------------------------------------------------------
-# CAMPOS ESTIMADO
-# TODO(reporte-produccion): las fórmulas de esta sección NO están validadas
-# contra el reporte original. Ajustarlas aquí cuando el equipo de cobros
-# confirme los montos; el resto del endpoint no depende de cómo se calculan.
+# CAMPOS DE COBROS POR RECIBO
+# prima_neta_cobrada, comision_liquidada, sobrecomis_liquidada, creditos_aplicados
+# y porcentaje_comis_recibo salen de las aplicaciones de recibos a la factura
+# (imrecpol), excluyendo recibos anulados (imrecibo.lanulado = 1).
+#
+# TODO: revalidar cuando llegue el backup actualizado de la BD.
+# Con la copia actual cuadran exacto las facturas "limpias" (un recibo, pagadas
+# completas), pero no las de cuotas/endosos múltiples (facturas de referencia
+# del caso abierto: 003672555 y 10495501). Se atribuye a que el backup no está
+# sincronizado con los datos que generaron el Excel original.
 # ---------------------------------------------------------------------------
 
-def _estimado_cobros_por_factura(cursor, ccodfacts: list[str]) -> dict[str, tuple[Decimal, Decimal]]:
+TIPO_RECIBO_NOTA_CREDITO = "NOTCRED"
+
+
+def _recibos_por_factura(cursor, ccodfacts: list[str]) -> dict[str, list[dict]]:
     """
-    ESTIMADO. ccodfact -> (prima_neta_cobrada, comision_liquidada).
-    prima_neta_cobrada = SUM(imrecpol.yaplicado)
-    comision_liquidada = SUM(imrecpol.ycomisrecibida)  (suele dar 0, el más incierto)
+    Una sola pasada por imrecpol + imrecibo para todas las facturas de la página:
+    ccodfact -> lista de aplicaciones de recibos no anulados.
     """
-    resultado: dict[str, tuple[Decimal, Decimal]] = {}
+    resultado: dict[str, list[dict]] = {}
     for chunk in _chunks(ccodfacts):
         cursor.execute(
             f"""
-            SELECT ccodfact, SUM(yaplicado), SUM(ycomisrecibida)
-            FROM dbo.imrecpol
-            WHERE ccodfact IN ({_placeholders(len(chunk))})
-            GROUP BY ccodfact
+            SELECT rp.ccodfact, rp.yaplicado, rp.ycomisrecibida, rp.bporcomis,
+                   rp.ysobrecomision, RTRIM(rp.ccodtiprecpol), r.dfechrecibo, r.ccodrecibo
+            FROM dbo.imrecpol rp
+            JOIN dbo.imrecibo r ON r.ccodrecibo = rp.ccodrecibo
+            WHERE r.lanulado = 0
+              AND rp.ccodfact IN ({_placeholders(len(chunk))})
             """,
             chunk,
         )
-        for ccodfact, aplicado, comis in cursor.fetchall():
-            resultado[ccodfact] = (aplicado or Decimal("0"), comis or Decimal("0"))
+        for ccodfact, aplicado, comis, porcomis, sobrecomis, tipo, fecha, ccodrecibo in cursor.fetchall():
+            resultado.setdefault(ccodfact, []).append({
+                "aplicado": _to_decimal(aplicado) or Decimal("0"),
+                "comis_recibida": _to_decimal(comis) or Decimal("0"),
+                "porcomis": _to_decimal(porcomis) or Decimal("0"),
+                "sobrecomis": _to_decimal(sobrecomis) or Decimal("0"),
+                "tipo": (tipo or "").strip().upper(),
+                "fecha": fecha,
+                "ccodrecibo": ccodrecibo or "",
+            })
     return resultado
 
 
-def _estimado_creditos_por_factura(cursor, facturas: list[str]) -> dict[tuple[str, str], Decimal]:
+def _sobrecomis_recibo(recibo: dict, pol_ysobrecomision: Decimal) -> Decimal:
     """
-    ESTIMADO. (poliza, factura) normalizados -> SUM(t_creditos.montooper) con anulado = 0.
-    t_creditos usa Latin1_General_CI_AS y imfact/impoliza SQL_Latin1_General_CP1_CS_AS:
-    se aplica COLLATE DATABASE_DEFAULT para evitar el conflicto de collation.
+    Fórmula de dos ramas, por recibo (el %comis y el %sobrecomis pueden variar
+    entre recibos de una misma factura si hubo cambio de tasa):
+    - imrecpol.bporcomis != 0: ycomisrecibida * (imrecpol.ysobrecomision / imrecpol.bporcomis)
+    - imrecpol.bporcomis == 0: yaplicado * (impoliza.ysobrecomision / 100)
     """
-    resultado: dict[tuple[str, str], Decimal] = {}
-    for chunk in _chunks(facturas):
-        cursor.execute(
-            f"""
-            SELECT numpoliza, numfactura, SUM(montooper)
-            FROM dbo.t_creditos
-            WHERE anulado = 0
-              AND numfactura COLLATE DATABASE_DEFAULT IN ({_placeholders(len(chunk))})
-            GROUP BY numpoliza, numfactura
-            """,
-            chunk,
-        )
-        for numpoliza, numfactura, monto in cursor.fetchall():
-            clave = ((numpoliza or "").strip().upper(), (numfactura or "").strip().upper())
-            resultado[clave] = resultado.get(clave, Decimal("0")) + (monto or Decimal("0"))
-    return resultado
+    if recibo["porcomis"] != 0:
+        return recibo["comis_recibida"] * (recibo["sobrecomis"] / recibo["porcomis"])
+    return recibo["aplicado"] * (pol_ysobrecomision / Decimal("100"))
 
 
-def _estimado_sobrecomis_liquidada(
-    porcentaje_comis,
-    porcentaje_sobrecomis,
-    pol_ysobrecomision,
-    comision_liquidada: Optional[Decimal],
-    prima_neta_cobrada: Optional[Decimal],
-) -> Optional[Decimal]:
-    """
-    ESTIMADO.
-    - bporcomisprod != 0: comision_liquidada * (imfact.ysobrecomision / imfact.bporcomisprod)
-    - bporcomisprod == 0: prima_neta_cobrada * (impoliza.ysobrecomision / 100)
-    """
-    porc_comis = _to_decimal(porcentaje_comis) or Decimal("0")
-    if porc_comis != 0:
-        sobre = _to_decimal(porcentaje_sobrecomis)
-        if sobre is None or comision_liquidada is None:
-            return None
-        return comision_liquidada * (sobre / porc_comis)
-    sobre_pol = _to_decimal(pol_ysobrecomision)
-    if sobre_pol is None or prima_neta_cobrada is None:
+def _recibo_mas_reciente(recibos: list[dict]) -> Optional[dict]:
+    """dfechrecibo DESC; ccodrecibo desempata recibos del mismo instante."""
+    con_fecha = [r for r in recibos if r["fecha"] is not None]
+    if not con_fecha:
         return None
-    return prima_neta_cobrada * (sobre_pol / Decimal("100"))
+    return max(con_fecha, key=lambda r: (r["fecha"], r["ccodrecibo"]))
 
 
-def _aplicar_campos_estimados(cursor, filas: list[dict]) -> None:
+def _calcular_cobros(recibos: list[dict], pol_ysobrecomision) -> dict:
+    sobre_pol = _to_decimal(pol_ysobrecomision) or Decimal("0")
+    reciente = _recibo_mas_reciente(recibos)
+    return {
+        "prima_neta_cobrada": sum((r["aplicado"] for r in recibos), Decimal("0")),
+        "comision_liquidada": sum((r["comis_recibida"] for r in recibos), Decimal("0")),
+        "sobrecomis_liquidada": sum((_sobrecomis_recibo(r, sobre_pol) for r in recibos), Decimal("0")),
+        "creditos_aplicados": sum(
+            (r["aplicado"] for r in recibos if r["tipo"] == TIPO_RECIBO_NOTA_CREDITO), Decimal("0")
+        ),
+        "porcentaje_comis_recibo": float(reciente["porcomis"]) if reciente else None,
+    }
+
+
+def _aplicar_campos_cobros(cursor, filas: list[dict]) -> None:
     ccodfacts = sorted({f["_ccodfact"] for f in filas if f["_ccodfact"]})
-    facturas = sorted({f["factura"] for f in filas if f["factura"]})
-    cobros = _estimado_cobros_por_factura(cursor, ccodfacts)
-    creditos = _estimado_creditos_por_factura(cursor, facturas)
+    recibos = _recibos_por_factura(cursor, ccodfacts)
 
     for fila in filas:
-        cobrada, comis_liq = cobros.get(fila["_ccodfact"], (Decimal("0"), Decimal("0")))
-        clave = ((fila["poliza"] or "").upper(), (fila["factura"] or "").upper())
-        fila["prima_neta_cobrada"] = cobrada
-        fila["comision_liquidada"] = comis_liq
-        fila["creditos_aplicados"] = creditos.get(clave, Decimal("0"))
-        fila["sobrecomis_liquidada"] = _estimado_sobrecomis_liquidada(
-            fila["porcentaje_comis"],
-            fila["porcentaje_sobrecomis"],
-            fila["_pol_ysobrecomision"],
-            comis_liq,
-            cobrada,
-        )
+        fila.update(_calcular_cobros(recibos.get(fila["_ccodfact"], []), fila["_pol_ysobrecomision"]))
 
-# ------------------------- fin CAMPOS ESTIMADO -----------------------------
+# --------------------- fin CAMPOS DE COBROS POR RECIBO ---------------------
 
 
 def _aplicar_roles_ejecutivos(cursor, filas: list[dict]) -> None:
@@ -271,7 +262,7 @@ EJEMPLO_RESPUESTA = {
         "fecha_produccion": None, "factura": "F-000000", "concepto": "RENOVACION",
         "fecha_remision": "2026-08-05", "suma_asegurada": "1500000.0000",
         "tasa_facturacion": "0.0000", "prima_neta": "25000.0000", "porcentaje_comis": 15.0,
-        "comision": "3750.0000", "prima_neta_cobrada": "25000.0000", "creditos_aplicados": "0",
+        "comision": "3750.0000", "porcentaje_comis_recibo": 15.0, "prima_neta_cobrada": "25000.0000", "creditos_aplicados": "0",
         "comision_liquidada": "0.0000", "porcentaje_sobrecomis": "0.00",
         "sobrecomis_liquidada": "0.000000", "fecha_ingreso_cliente": "2015-03-10T00:00:00",
         "frecuencia_facturacion": "ANUAL", "fecha_emision_poliza": "2015-03-10T00:00:00",
@@ -308,9 +299,11 @@ def get_reporte_produccion(
 
     Orden: código de cliente, fecha de factura.
 
-    **Campos ESTIMADO** (pendientes de validar contra el reporte original):
-    `prima_neta_cobrada`, `creditos_aplicados`, `comision_liquidada` y
-    `sobrecomis_liquidada`. La respuesta incluye un aviso en `advertencias`.
+    **Campos de cobros por recibo** (`imrecpol` + `imrecibo`, sin recibos anulados):
+    `prima_neta_cobrada`, `creditos_aplicados` (solo recibos `NOTCRED`),
+    `comision_liquidada`, `sobrecomis_liquidada` y `porcentaje_comis_recibo`
+    (del recibo más reciente). Pendientes de revalidar contra el reporte original
+    con un backup actualizado de la BD; la respuesta incluye un aviso en `advertencias`.
     """
     if fecha_desde > fecha_hasta:
         raise HTTPException(
@@ -354,7 +347,7 @@ def get_reporte_produccion(
             filas.append(fila)
 
         if filas:
-            _aplicar_campos_estimados(cursor, filas)
+            _aplicar_campos_cobros(cursor, filas)
             _aplicar_roles_ejecutivos(cursor, filas)
 
         data = [
