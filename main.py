@@ -4,7 +4,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
 import traceback
 from datetime import datetime
-from controllers import imclient_controller, impoliza_controller, client_controller, kyc_controller, logs_controller, reporte_produccion_controller, reporte_comisiones_recibo_controller
+from controllers import imclient_controller, impoliza_controller, client_controller, kyc_controller, logs_controller, reporte_produccion_controller, reporte_comisiones_recibo_controller, ejecutivo_controller
 
 # Configurar logging
 logging.basicConfig(
@@ -39,6 +39,10 @@ tags_metadata = [
                        "Reporte de Comisiones por Recibo Multi Vendor: una fila por recibo x coaseguradora; "
                        "agente_poliza y porcentaje_incentivo_agente no están validados.",
     },
+    {
+        "name": "Ejecutivos",
+        "description": "Ejecutivos de cuenta activos con sus asignaciones activas de clientes (imcliejec/imtipejec/imejecut).",
+    },
 ]
 
 app = FastAPI(
@@ -55,6 +59,7 @@ app.include_router(kyc_controller.router)
 app.include_router(logs_controller.router)
 app.include_router(reporte_produccion_controller.router)
 app.include_router(reporte_comisiones_recibo_controller.router)
+app.include_router(ejecutivo_controller.router)
 
 # Exception handlers
 @app.exception_handler(StarletteHTTPException)

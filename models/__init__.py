@@ -18,6 +18,7 @@ from models.reporte_comisiones_recibo import (
     ReporteComisionesReciboFiltros,
     ReporteComisionesReciboResponse,
 )
+from models.ejecutivo import EjecutivoCuentaRow, PaginatedEjecutivoCuentaResponse
 
 __all__ = [
     "Credentials",
@@ -38,4 +39,6 @@ __all__ = [
     "ReporteComisionesReciboRow",
     "ReporteComisionesReciboFiltros",
     "ReporteComisionesReciboResponse",
+    "EjecutivoCuentaRow",
+    "PaginatedEjecutivoCuentaResponse",
 ]

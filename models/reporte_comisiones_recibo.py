@@ -10,12 +10,18 @@ ADVERTENCIA_AGENTE_NO_VALIDADO = (
     "para resolverlo de forma definitiva"
 )
 
+ADVERTENCIA_CAMPOS_BAJA_CONFIANZA = (
+    "gastos_admin, prima_neta (aproximación), comision_liquidada, diferencia, "
+    "sobrecomis_liquidada y sobrecomis_diferencia no están validados contra el reporte original; "
+    "comision_liquidada (imrecpol.ycomisrecibida) no coincidió con casos reales"
+)
+
 
 class ReporteComisionesReciboRow(BaseModel):
     """
-    Una fila = un recibo aplicado a factura (imrecpol) x coaseguradora (imfactcoaseg).
-    Si la factura no tiene coaseguro declarado, sale una sola fila con la
-    aseguradora líder de la póliza al 100%.
+    Una fila = un recibo aplicado a factura (imrecpol), con la coaseguradora de
+    mayor participación de la factura (imfactcoaseg) o, si la factura no tiene
+    coaseguro declarado, la aseguradora líder de la póliza al 100%.
     """
     cod_cliente: Optional[int] = None                       # imclient.inumclient
     cliente: Optional[str] = None                           # imclient.cnomcliente
@@ -28,8 +34,8 @@ class ReporteComisionesReciboRow(BaseModel):
     fecha_emision: Optional[datetime] = None                # impoliza.dfechemis
     poliza: Optional[str] = None                            # impoliza.cnumpoliza
     aseguradora: Optional[str] = None                       # imciaseg.cnombre (líder de la póliza)
-    coaseguro: Optional[str] = None                         # imciaseg.cnombre (imfactcoaseg o líder)
-    porcentaje_participacion: Optional[Decimal] = None      # imfactcoaseg.nporcpart o 100
+    coaseguro: Optional[str] = None                         # imciaseg.cnombre (imfactcoaseg de mayor nporcpart o líder)
+    porcentaje_participacion: Optional[Decimal] = None      # imfactcoaseg.nporcpart (la mayor) o 100
     moneda: Optional[str] = None                            # impoliza.cmoneda
     recibo: Optional[str] = None                            # imrecibo.cnumrecprov
     concepto_recibo: Optional[str] = None                   # imfaconc.cdescripcion (imrecibo.ccodfaconc)
@@ -40,27 +46,35 @@ class ReporteComisionesReciboRow(BaseModel):
     inicio_vig_factura: Optional[datetime] = None           # imfact.dinivigen
     dias: Optional[int] = None                              # DATEDIFF(DAY, dinivigen, dfechrecibo)
     concepto: Optional[str] = None                          # imfaconc.cdescripcion (imfact.ccodfaconc)
-    gastos_admin: Optional[Decimal] = None                  # imfact.ygadministrativo
-    prima_bruta: Optional[Decimal] = None                   # imfact.yprimabruta
-    prima_neta: Optional[Decimal] = None                    # imfact.yprimaneta
+    gastos_admin: Optional[Decimal] = None                  # imfact.ygadministrativo (BAJA CONFIANZA: no validado)
+    prima_bruta: Optional[Decimal] = None                   # imrecpol.yaplicado (monto aplicado por este recibo)
+    prima_neta: Optional[Decimal] = None                    # yaplicado / (1 + imfact.bporcimp / 100) (APROXIMACIÓN, no validado)
     mantiene_porcentaje_comis: Optional[str] = None         # impoliza.mantenerporcomis -> "Si" / ""
     recibo_comisiones: Optional[int] = None                 # imrecing.inumrecing (null si no liquidada)
     porcentaje_comis: Optional[float] = None                # imrecpol.bporcomis
-    comision_generada: Optional[Decimal] = None             # ROUND(yaplicado * bporcomis / 100, 2)
-    comision_liquidada: Optional[Decimal] = None            # imrecpol.ycomisrecibida
-    diferencia: Optional[Decimal] = None                    # comision_generada - comision_liquidada
+    comision_generada: Optional[Decimal] = None             # ROUND(prima_neta * bporcomis / 100, 2)
+    comision_liquidada: Optional[Decimal] = None            # imrecpol.ycomisrecibida (BAJA CONFIANZA: no coincidió con casos reales)
+    diferencia: Optional[Decimal] = None                    # comision_generada - comision_liquidada (BAJA CONFIANZA)
     porcentaje_sobrecomis: Optional[Decimal] = None         # imrecpol.ysobrecomision
-    sobrecomis_generada: Optional[Decimal] = None           # ROUND(yaplicado * ysobrecomision / 100, 2)
-    sobrecomis_liquidada: Optional[Decimal] = None
-    sobrecomis_diferencia: Optional[Decimal] = None
+    sobrecomis_generada: Optional[Decimal] = None           # ROUND(prima_neta * ysobrecomision / 100, 2)
+    sobrecomis_liquidada: Optional[Decimal] = None          # BAJA CONFIANZA: no validado
+    sobrecomis_diferencia: Optional[Decimal] = None         # sobrecomis_generada - sobrecomis_liquidada (BAJA CONFIANZA)
     agente_poliza: Optional[str] = None                     # NO VALIDADO (imcocorretaje / cocorredores)
     porcentaje_incentivo_agente: Optional[Decimal] = None   # NO VALIDADO
+    analista_cobros_comisiones: Optional[str] = None        # imejecut vía impolejec (ccodtipejec '002')
 
 
 class ReporteComisionesReciboFiltros(BaseModel):
     fecha_desde: date
     fecha_hasta: date
     cliente: Optional[str] = None
+    analista: Optional[str] = None
+    sucursal: Optional[str] = None
+    area: Optional[str] = None
+    tipo_cliente: Optional[str] = None
+    aseguradora: Optional[str] = None
+    ramo: Optional[list[str]] = None
+    moneda: Optional[str] = None
     limit: Optional[int] = None
     offset: int = 0
 
