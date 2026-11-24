@@ -1,0 +1,10 @@
+﻿2: from typing import Optional, Literal
+33: @router.get(ENDPOINT, response_model=PaginatedAseguradoraResponse, tags=["Aseguradoras"])
+35: page: int = Query(1, ge=1, description="Número de página"),
+36: page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+37: nombre: Optional[str] = Query(None, description=DESC_NOMBRE),
+38: estado: Optional[Literal["A", "I"]] = Query(None, description=DESC_ESTADO),
+155: @router.get(
+162: page: int = Query(1, ge=1, description="Número de página"),
+163: page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Tamaño de página"),
+164: aseguradora: Optional[str] = Query(

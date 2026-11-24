@@ -5,6 +5,7 @@ import logging
 import traceback
 from datetime import datetime
 from controllers import imclient_controller, impoliza_controller, client_controller, kyc_controller, logs_controller, reporte_produccion_controller, reporte_comisiones_recibo_controller, ejecutivo_controller
+from controllers import aseguradora_controller
 
 # Configurar logging
 logging.basicConfig(
@@ -36,12 +37,19 @@ tags_metadata = [
         "description": "Reportes operativos. Reporte de Producción: una fila por factura (imfact) "
                        "en un rango de fechas. Los campos prima_neta_cobrada, creditos_aplicados, "
                        "comision_liquidada y sobrecomis_liquidada son ESTIMADOS, pendientes de validar. "
-                       "Reporte de Comisiones por Recibo Multi Vendor: una fila por recibo x coaseguradora; "
+                       "Reporte de Comisiones por Recibo Multi Vendor: una fila por recibo aplicado a factura, "
+                       "en dos versiones: /comisiones-recibo-multivendor (sin ejecutivo, más liviano) y "
+                       "/comisiones-recibo-multivendor-ejecutivo (con ejecutivo: incluye el Analista de Cobros "
+                       "y Comisiones y el filtro analista); "
                        "agente_poliza y porcentaje_incentivo_agente no están validados.",
     },
     {
         "name": "Ejecutivos",
         "description": "Ejecutivos de cuenta activos con sus asignaciones activas de clientes (imcliejec/imtipejec/imejecut).",
+    },
+    {
+        "name": "Aseguradoras",
+        "description": "Aseguradoras (imciaseg) con datos de contacto, estatus y cantidad de pólizas.",
     },
 ]
 
@@ -60,6 +68,7 @@ app.include_router(logs_controller.router)
 app.include_router(reporte_produccion_controller.router)
 app.include_router(reporte_comisiones_recibo_controller.router)
 app.include_router(ejecutivo_controller.router)
+app.include_router(aseguradora_controller.router)
 
 # Exception handlers
 @app.exception_handler(StarletteHTTPException)

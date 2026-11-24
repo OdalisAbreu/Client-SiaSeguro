@@ -1,0 +1,50 @@
+{
+ "rutas": [
+  "/api/reportes/comisiones-recibo-multivendor",
+  "/api/reportes/comisiones-recibo-multivendor-ejecutivo"
+ ],
+ "openapi_sin": {
+  "summary": "Reporte de Comisiones Generadas Asociadas a Pólizas - Recibo Multi Vendor",
+  "params": [
+   "fecha_desde",
+   "fecha_hasta",
+   "cliente",
+   "sucursal",
+   "area",
+   "tipo_cliente",
+   "aseguradora",
+   "ramo",
+   "moneda",
+   "limit",
+   "offset"
+  ],
+  "row_schema": "ReporteComisionesReciboRow",
+  "row_has_analista": false,
+  "filtros_has_analista": false,
+  "example_has_analista": false
+ },
+ "openapi_con": {
+  "summary": "Reporte de Recibo de Comisiones con Ejecutivo",
+  "params": [
+   "fecha_desde",
+   "fecha_hasta",
+   "cliente",
+   "analista",
+   "sucursal",
+   "area",
+   "tipo_cliente",
+   "aseguradora",
+   "ramo",
+   "moneda",
+   "limit",
+   "offset"
+  ],
+  "row_schema": "ReporteComisionesReciboEjecutivoRow",
+  "row_has_analista": true,
+  "filtros_has_analista": true,
+  "example_has_analista": true
+ },
+ "400_sin": 400,
+ "400_con": 400,
+ "t_sin": 26.3
+}

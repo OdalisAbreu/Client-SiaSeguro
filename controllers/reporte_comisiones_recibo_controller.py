@@ -5,11 +5,17 @@ Grano: una fila por recibo aplicado a factura (imrecpol), con la coaseguradora
 de mayor participación de la factura (imfactcoaseg) o, si la factura no tiene
 coaseguro declarado, la aseguradora líder de la póliza al 100%.
 
+Dos endpoints que comparten todo el armado del SQL (_generar_reporte):
+- /comisiones-recibo-multivendor: "sin ejecutivo", más liviano. No incluye el
+  Analista de Cobros y Comisiones ni el filtro `analista`, y no consulta impolejec.
+- /comisiones-recibo-multivendor-ejecutivo: "con ejecutivo", igual al anterior
+  más analista_cobros_comisiones y el filtro `analista`.
+
 Estructura:
 1. Query principal (SQL de referencia validado) con todo lo verificado.
-2. analista_cobros_comisiones (impolejec '002'): se resuelve aparte, solo para
-   las pólizas de la página; el OUTER APPLY solo entra al SQL principal cuando
-   se filtra por `analista`.
+2. analista_cobros_comisiones (impolejec '002'), solo en "con ejecutivo": se
+   resuelve aparte, solo para las pólizas de la página; el OUTER APPLY solo
+   entra al SQL principal cuando se filtra por `analista`.
 3. agente_poliza / porcentaje_incentivo_agente: se resuelven aparte, solo para
    las pólizas de la página, en una función aislada (ver "CAMPO NO VALIDADO").
 """
@@ -18,12 +24,17 @@ from typing import Annotated, Optional, Iterable, List, Literal
 from datetime import date, timedelta
 from pydantic import BeforeValidator
 from decimal import Decimal
+import copy
+import inspect
 import logging
 import traceback
 from models.reporte_comisiones_recibo import (
     ReporteComisionesReciboRow,
     ReporteComisionesReciboFiltros,
     ReporteComisionesReciboResponse,
+    ReporteComisionesReciboEjecutivoRow,
+    ReporteComisionesReciboEjecutivoFiltros,
+    ReporteComisionesReciboEjecutivoResponse,
     ADVERTENCIA_AGENTE_NO_VALIDADO,
     ADVERTENCIA_CAMPOS_BAJA_CONFIANZA,
 )
@@ -35,6 +46,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reportes", tags=["Reportes"])
 
 ENDPOINT = "/api/reportes/comisiones-recibo-multivendor"
+ENDPOINT_EJECUTIVO = "/api/reportes/comisiones-recibo-multivendor-ejecutivo"
 QUERY_TIMEOUT_SECONDS = 120
 # SQL Server admite hasta 2100 parámetros por query; se trocean las listas IN.
 IN_CHUNK_SIZE = 1000
@@ -108,6 +120,7 @@ WHERE r.lanulado = 0
 
 # Filtros opcionales de texto parcial: (parámetro, expresión SQL).
 # COLLATE DATABASE_DEFAULT (CI) porque varias columnas son *_CS_AS.
+# "analista" solo existe en el endpoint con ejecutivo.
 FILTROS_TEXTO = [
     ("cliente", "cli.cnomcliente"),
     ("analista", "analcc.nombre"),
@@ -278,7 +291,7 @@ def _aplicar_agente_poliza(cursor, filas: list[dict]) -> None:
 EJEMPLO_RESPUESTA = {
     "total": 228,
     "filtros": {
-        "fecha_desde": "2026-09-30", "fecha_hasta": "2026-09-30", "cliente": None, "analista": None,
+        "fecha_desde": "2026-09-30", "fecha_hasta": "2026-09-30", "cliente": None,
         "sucursal": "Principal", "area": None, "tipo_cliente": None, "aseguradora": None,
         "ramo": ["Vehículos de Motor"], "moneda": "RD", "limit": 1, "offset": 0,
     },
@@ -306,75 +319,73 @@ EJEMPLO_RESPUESTA = {
         "sobrecomis_liquidada": "0.000000",            # BAJA CONFIANZA
         "sobrecomis_diferencia": "0.000000",           # BAJA CONFIANZA
         "agente_poliza": None, "porcentaje_incentivo_agente": "0",
-        "analista_cobros_comisiones": "NOMBRE APELLIDO",
     }],
 }
 
+# Con ejecutivo: mismo ejemplo + filtro analista + analista_cobros_comisiones
+EJEMPLO_RESPUESTA_EJECUTIVO = copy.deepcopy(EJEMPLO_RESPUESTA)
+EJEMPLO_RESPUESTA_EJECUTIVO["filtros"]["analista"] = None
+EJEMPLO_RESPUESTA_EJECUTIVO["data"][0]["analista_cobros_comisiones"] = "NOMBRE APELLIDO"
 
-@router.get(
-    "/comisiones-recibo-multivendor",
-    response_model=ReporteComisionesReciboResponse,
-    summary="Reporte de Comisiones Generadas Asociadas a Pólizas - Recibo Multi Vendor",
-    responses={
-        200: {"content": {"application/json": {"example": EJEMPLO_RESPUESTA}}},
-        400: {"description": "fecha_desde es mayor que fecha_hasta"},
-        500: {"description": "Error al generar el reporte (detalle solo en el log del servidor)"},
-    },
-)
-def get_reporte_comisiones_recibo_multivendor(
-    fecha_desde: date = Query(..., description="Fecha inicial (YYYY-MM-DD). Filtra por la fecha del recibo (imrecibo.dfechrecibo)"),
-    fecha_hasta: date = Query(..., description="Fecha final, día completo inclusive (YYYY-MM-DD)"),
-    cliente: Optional[str] = Query(None, description="Filtro parcial por nombre del cliente, sin distinguir mayúsculas/minúsculas"),
-    analista: Optional[str] = Query(None, description="Filtro parcial por nombre del Analista de Cobros y Comisiones de la póliza, sin distinguir mayúsculas/minúsculas"),
-    sucursal: Optional[str] = Query(None, description="Filtro parcial por sucursal del cliente, sin distinguir mayúsculas/minúsculas. Ej.: Principal, Romana, Punta Cana"),
-    area: Optional[str] = Query(None, description="Filtro parcial por área del ramo, sin distinguir mayúsculas/minúsculas"),
-    tipo_cliente: Optional[str] = Query(None, description="Filtro parcial por tipo de cliente, sin distinguir mayúsculas/minúsculas. Ej.: PERSONAL, COMERCIAL, BANCASEGUROS, PERSONALES PREMIUM, CORPORATIVOS, GUBERNAMENTALES"),
-    aseguradora: Optional[str] = Query(None, description="Filtro parcial por nombre de la aseguradora líder de la póliza, sin distinguir mayúsculas/minúsculas. Ej.: SEGUROS UNIVERSAL, HUMANO SEGUROS"),
-    ramo: Optional[List[str]] = Query(None, description="Uno o varios ramos, nombre exacto sin distinguir mayúsculas/minúsculas; se repite en la URL (?ramo=Salud y Vida&ramo=Vehículos de Motor). Ej.: Salud y Vida, Vehículos de Motor, Incendio y Aliados, Fianzas, Transporte, TODO RIESGO"),
-    moneda: Annotated[
-        Optional[Literal["RD", "US"]],
-        BeforeValidator(_normalizar_moneda),
-        Query(description="Moneda de la póliza: RD = pesos, US = dólares. En blanco = ambas"),
-    ] = None,
-    limit: Optional[int] = Query(None, ge=1, description="Máximo de filas a devolver. Omitido = todas (~2,100 filas por mes)"),
-    offset: int = Query(0, ge=0, description="Filas a saltar (usar junto con limit)"),
-    username: str = Depends(verify_credentials),
+RESPUESTAS_ERROR = {
+    400: {"description": "fecha_desde es mayor que fecha_hasta"},
+    500: {"description": "Error al generar el reporte (detalle solo en el log del servidor)"},
+}
+
+# Parámetros comunes a los dos endpoints
+FechaDesdeQ = Annotated[date, Query(description="Fecha inicial (YYYY-MM-DD). Filtra por la fecha del recibo (imrecibo.dfechrecibo)")]
+FechaHastaQ = Annotated[date, Query(description="Fecha final, día completo inclusive (YYYY-MM-DD)")]
+ClienteQ = Annotated[Optional[str], Query(description="Filtro parcial por nombre del cliente, sin distinguir mayúsculas/minúsculas")]
+AnalistaQ = Annotated[Optional[str], Query(description="Filtro parcial por nombre del Analista de Cobros y Comisiones de la póliza, sin distinguir mayúsculas/minúsculas")]
+SucursalQ = Annotated[Optional[str], Query(description="Filtro parcial por sucursal del cliente, sin distinguir mayúsculas/minúsculas. Ej.: Principal, Romana, Punta Cana")]
+AreaQ = Annotated[Optional[str], Query(description="Filtro parcial por área del ramo, sin distinguir mayúsculas/minúsculas")]
+TipoClienteQ = Annotated[Optional[str], Query(description="Filtro parcial por tipo de cliente, sin distinguir mayúsculas/minúsculas. Ej.: PERSONAL, COMERCIAL, BANCASEGUROS, PERSONALES PREMIUM, CORPORATIVOS, GUBERNAMENTALES")]
+AseguradoraQ = Annotated[Optional[str], Query(description="Filtro parcial por nombre de la aseguradora líder de la póliza, sin distinguir mayúsculas/minúsculas. Ej.: SEGUROS UNIVERSAL, HUMANO SEGUROS")]
+RamoQ = Annotated[Optional[List[str]], Query(description="Uno o varios ramos, nombre exacto sin distinguir mayúsculas/minúsculas; se repite en la URL (?ramo=Salud y Vida&ramo=Vehículos de Motor). Ej.: Salud y Vida, Vehículos de Motor, Incendio y Aliados, Fianzas, Transporte, TODO RIESGO")]
+MonedaQ = Annotated[
+    Optional[Literal["RD", "US"]],
+    BeforeValidator(_normalizar_moneda),
+    Query(description="Moneda de la póliza: RD = pesos, US = dólares. En blanco = ambas"),
+]
+LimitQ = Annotated[Optional[int], Query(ge=1, description="Máximo de filas a devolver. Omitido = todas (~2,100 filas por mes)")]
+OffsetQ = Annotated[int, Query(ge=0, description="Filas a saltar (usar junto con limit)")]
+
+
+def _generar_reporte(
+    *,
+    con_ejecutivo: bool,
+    fecha_desde: date,
+    fecha_hasta: date,
+    cliente: Optional[str],
+    analista: Optional[str],
+    sucursal: Optional[str],
+    area: Optional[str],
+    tipo_cliente: Optional[str],
+    aseguradora: Optional[str],
+    ramo: Optional[List[str]],
+    moneda: Optional[str],
+    limit: Optional[int],
+    offset: int,
 ):
     """
-    Una fila por **recibo aplicado a factura** (`imrecpol`), con la coaseguradora
-    de mayor participación de la factura (`imfactcoaseg`) o, si la factura no
-    tiene coaseguro declarado, la aseguradora líder de la póliza al 100%.
-
-    `prima_bruta` es el monto aplicado por el recibo (`imrecpol.yaplicado`);
-    `prima_neta` es una aproximación: `yaplicado / (1 + imfact.bporcimp / 100)`.
-    Comisión y sobrecomisión generadas se calculan sobre esa prima neta.
-
-    Excluye recibos anulados (`imrecibo.lanulado = 1`). Las fechas filtran por
-    `imrecibo.dfechrecibo`, tomando días completos.
-
-    `analista_cobros_comisiones`: ejecutivo tipo '002' activo asignado a la
-    póliza (`impolejec`); si hay varios, el último registrado.
-
-    Filtros opcionales de texto parcial (sin distinguir mayúsculas): `cliente`,
-    `analista`, `sucursal`, `area`, `tipo_cliente`, `aseguradora` (la líder de la póliza).
-    `ramo`: uno o varios nombres exactos (sin distinguir mayúsculas), repitiendo
-    el parámetro. `moneda`: RD o US (`impoliza.cmoneda`).
-
-    **Campos no validados** (la respuesta incluye los avisos en `advertencias`):
-    `agente_poliza` y `porcentaje_incentivo_agente`; además `gastos_admin`,
-    `prima_neta` (aproximación), `comision_liquidada`, `diferencia`,
-    `sobrecomis_liquidada` y `sobrecomis_diferencia`.
+    Lógica común de los dos endpoints. Con con_ejecutivo=False no se acepta el
+    filtro `analista`, no se consulta impolejec y las filas no llevan
+    analista_cobros_comisiones.
     """
+    endpoint = ENDPOINT_EJECUTIVO if con_ejecutivo else ENDPOINT
     if fecha_desde > fecha_hasta:
         raise HTTPException(status_code=400, detail="fecha_desde no puede ser mayor que fecha_hasta.")
 
     textos = {
-        "cliente": cliente, "analista": analista, "sucursal": sucursal,
+        "cliente": cliente, "sucursal": sucursal,
         "area": area, "tipo_cliente": tipo_cliente, "aseguradora": aseguradora,
     }
+    if con_ejecutivo:
+        textos["analista"] = analista
     textos = {k: (v.strip() if v and v.strip() else None) for k, v in textos.items()}
     ramos = _normalizar_ramos(ramo)
-    filtros = ReporteComisionesReciboFiltros(
+    filtros_cls = ReporteComisionesReciboEjecutivoFiltros if con_ejecutivo else ReporteComisionesReciboFiltros
+    filtros = filtros_cls(
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, **textos, ramo=ramos, moneda=moneda,
         limit=limit, offset=offset,
     )
@@ -383,7 +394,7 @@ def get_reporte_comisiones_recibo_multivendor(
     where_extra = ""
     params = [fecha_desde, fin_exclusivo]
     for nombre, columna in FILTROS_TEXTO:
-        if textos[nombre]:
+        if textos.get(nombre):
             # Collations *_CS_AS: DATABASE_DEFAULT (CI) hace el LIKE insensible a mayúsculas
             where_extra += f" AND {columna} COLLATE DATABASE_DEFAULT LIKE ?"
             params.append(f"%{textos[nombre]}%")
@@ -395,7 +406,7 @@ def get_reporte_comisiones_recibo_multivendor(
         where_extra += " AND RTRIM(pol.cmoneda) = ?"
         params.append(moneda)
     # El OUTER APPLY del analista solo hace falta para filtrar por él
-    from_where = FROM_BASE + (ANALISTA_APPLY if textos["analista"] else "") + FROM_REST
+    from_where = FROM_BASE + (ANALISTA_APPLY if textos.get("analista") else "") + FROM_REST
 
     conn = None
     try:
@@ -427,15 +438,18 @@ def get_reporte_comisiones_recibo_multivendor(
             filas.append(fila)
 
         if filas:
-            _aplicar_analista_poliza(cursor, filas)
+            if con_ejecutivo:
+                _aplicar_analista_poliza(cursor, filas)
             _aplicar_agente_poliza(cursor, filas)
 
+        row_cls = ReporteComisionesReciboEjecutivoRow if con_ejecutivo else ReporteComisionesReciboRow
+        response_cls = ReporteComisionesReciboEjecutivoResponse if con_ejecutivo else ReporteComisionesReciboResponse
         data = [
-            ReporteComisionesReciboRow(**{k: v for k, v in fila.items() if not k.startswith("_")})
+            row_cls(**{k: v for k, v in fila.items() if not k.startswith("_")})
             for fila in filas
         ]
 
-        return ReporteComisionesReciboResponse(
+        return response_cls(
             total=total,
             filtros=filtros,
             advertencias=[ADVERTENCIA_AGENTE_NO_VALIDADO, ADVERTENCIA_CAMPOS_BAJA_CONFIANZA],
@@ -446,10 +460,10 @@ def get_reporte_comisiones_recibo_multivendor(
         raise
     except Exception as e:
         logger.error(
-            f"Error generando reporte en endpoint {ENDPOINT}",
+            f"Error generando reporte en endpoint {endpoint}",
             exc_info=True,
             extra={
-                "endpoint": ENDPOINT,
+                "endpoint": endpoint,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
                 "query_params": filtros.model_dump(mode="json"),
@@ -461,3 +475,99 @@ def get_reporte_comisiones_recibo_multivendor(
     finally:
         if conn:
             conn.close()
+
+
+DOC_COMUN = """
+    Una fila por **recibo aplicado a factura** (`imrecpol`), con la coaseguradora
+    de mayor participación de la factura (`imfactcoaseg`) o, si la factura no
+    tiene coaseguro declarado, la aseguradora líder de la póliza al 100%.
+
+    `prima_bruta` es el monto aplicado por el recibo (`imrecpol.yaplicado`);
+    `prima_neta` es una aproximación: `yaplicado / (1 + imfact.bporcimp / 100)`.
+    Comisión y sobrecomisión generadas se calculan sobre esa prima neta.
+
+    Excluye recibos anulados (`imrecibo.lanulado = 1`). Las fechas filtran por
+    `imrecibo.dfechrecibo`, tomando días completos.
+"""
+
+DOC_CAMPOS_NO_VALIDADOS = """
+    **Campos no validados** (la respuesta incluye los avisos en `advertencias`):
+    `agente_poliza` y `porcentaje_incentivo_agente`; además `gastos_admin`,
+    `prima_neta` (aproximación), `comision_liquidada`, `diferencia`,
+    `sobrecomis_liquidada` y `sobrecomis_diferencia`.
+"""
+
+
+@router.get(
+    "/comisiones-recibo-multivendor",
+    response_model=ReporteComisionesReciboResponse,
+    summary="Reporte de Comisiones Generadas Asociadas a Pólizas - Recibo Multi Vendor",
+    description=inspect.cleandoc(DOC_COMUN + """
+    Versión **sin ejecutivo** (más liviana): no incluye el Analista de Cobros y
+    Comisiones ni permite filtrar por él, y no consulta `impolejec`. Para esa
+    columna usar `/api/reportes/comisiones-recibo-multivendor-ejecutivo`.
+
+    Filtros opcionales de texto parcial (sin distinguir mayúsculas): `cliente`,
+    `sucursal`, `area`, `tipo_cliente`, `aseguradora` (la líder de la póliza).
+    `ramo`: uno o varios nombres exactos (sin distinguir mayúsculas), repitiendo
+    el parámetro. `moneda`: RD o US (`impoliza.cmoneda`).
+""" + DOC_CAMPOS_NO_VALIDADOS),
+    responses={200: {"content": {"application/json": {"example": EJEMPLO_RESPUESTA}}}, **RESPUESTAS_ERROR},
+)
+def get_reporte_comisiones_recibo_multivendor(
+    fecha_desde: FechaDesdeQ,
+    fecha_hasta: FechaHastaQ,
+    cliente: ClienteQ = None,
+    sucursal: SucursalQ = None,
+    area: AreaQ = None,
+    tipo_cliente: TipoClienteQ = None,
+    aseguradora: AseguradoraQ = None,
+    ramo: RamoQ = None,
+    moneda: MonedaQ = None,
+    limit: LimitQ = None,
+    offset: OffsetQ = 0,
+    username: str = Depends(verify_credentials),
+):
+    return _generar_reporte(
+        con_ejecutivo=False, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        cliente=cliente, analista=None, sucursal=sucursal, area=area, tipo_cliente=tipo_cliente,
+        aseguradora=aseguradora, ramo=ramo, moneda=moneda, limit=limit, offset=offset,
+    )
+
+
+@router.get(
+    "/comisiones-recibo-multivendor-ejecutivo",
+    response_model=ReporteComisionesReciboEjecutivoResponse,
+    summary="Reporte de Recibo de Comisiones con Ejecutivo",
+    description=inspect.cleandoc(DOC_COMUN + """
+    Versión **con ejecutivo**: igual a `/api/reportes/comisiones-recibo-multivendor`
+    más `analista_cobros_comisiones`, el ejecutivo tipo '002' activo asignado a
+    la póliza (`impolejec`); si hay varios, el último registrado.
+
+    Filtros opcionales de texto parcial (sin distinguir mayúsculas): `cliente`,
+    `analista`, `sucursal`, `area`, `tipo_cliente`, `aseguradora` (la líder de la póliza).
+    `ramo`: uno o varios nombres exactos (sin distinguir mayúsculas), repitiendo
+    el parámetro. `moneda`: RD o US (`impoliza.cmoneda`).
+""" + DOC_CAMPOS_NO_VALIDADOS),
+    responses={200: {"content": {"application/json": {"example": EJEMPLO_RESPUESTA_EJECUTIVO}}}, **RESPUESTAS_ERROR},
+)
+def get_reporte_comisiones_recibo_multivendor_ejecutivo(
+    fecha_desde: FechaDesdeQ,
+    fecha_hasta: FechaHastaQ,
+    cliente: ClienteQ = None,
+    analista: AnalistaQ = None,
+    sucursal: SucursalQ = None,
+    area: AreaQ = None,
+    tipo_cliente: TipoClienteQ = None,
+    aseguradora: AseguradoraQ = None,
+    ramo: RamoQ = None,
+    moneda: MonedaQ = None,
+    limit: LimitQ = None,
+    offset: OffsetQ = 0,
+    username: str = Depends(verify_credentials),
+):
+    return _generar_reporte(
+        con_ejecutivo=True, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        cliente=cliente, analista=analista, sucursal=sucursal, area=area, tipo_cliente=tipo_cliente,
+        aseguradora=aseguradora, ramo=ramo, moneda=moneda, limit=limit, offset=offset,
+    )

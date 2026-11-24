@@ -4,52 +4,45 @@ from datetime import date, datetime
 from decimal import Decimal
 
 
-# TODO: revalidar cuando llegue el backup actualizado de la BD (y quitar este aviso si cuadra).
-ADVERTENCIA_CAMPOS_ESTIMADOS = (
-    "prima_neta_cobrada, creditos_aplicados, comision_liquidada y sobrecomis_liquidada "
-    "se calculan por recibo (imrecpol, sin anulados); cuadran en facturas de un solo recibo "
-    "pero están pendientes de revalidar en facturas con cuotas/endosos múltiples"
-)
-
-
 class ReporteProduccionRow(BaseModel):
     """
-    Una fila del Reporte de Producción = una factura (imfact).
+    Una fila del Reporte de Producción = una factura (imfact), o una nota de
+    crédito / débito (imrecibo) aplicada a una factura.
     Todos los campos son opcionales: el sistema fuente tiene muchos NULL
     (por ejemplo fecha_produccion / dfechcierreprod).
     """
+    tipo_documento: Optional[str] = None                    # FACTURA | NOTA_CREDITO | NOTA_DEBITO
     cod_cliente: Optional[int] = None                       # imclient.inumclient
-    cliente: Optional[str] = None                           # imclient.cnomcliente
+    cliente: Optional[str] = None                           # imclient.cnomcliente (+ capellidos si es persona)
     grupo_deudor: Optional[str] = None                      # imclient (ccodgrupo) o el propio cliente
     sucursal: Optional[str] = None                          # imsucursal.cdescripcion
     tipo_cliente: Optional[str] = None                      # imtipclient.tipo
     area: Optional[str] = None                              # imarea.cdescripcion
-    ramo: Optional[str] = None                              # imramos.cdescripcion
-    aseguradora: Optional[str] = None                       # imciaseg.cnombre
+    ramo: Optional[str] = None                              # imsubram.cdescripcion (sub-ramo)
+    aseguradora: Optional[str] = None                       # imciaseg.csiglas
     poliza: Optional[str] = None                            # impoliza.cnumpoliza
     moneda: Optional[str] = None                            # impoliza.cmoneda
-    inicio_vigencia: Optional[datetime] = None              # imfact.dinivigen
+    inicio_vigencia: Optional[datetime] = None              # imfact.dinivigen / imrecibo.dinivigen o dfechrecibo
     fecha_produccion: Optional[datetime] = None             # imfact.dfechcierreprod
-    factura: Optional[str] = None                           # imfact.cnumfact
+    factura: Optional[str] = None                           # imfact.cnumfact / imrecibo.cnumrecprov
     concepto: Optional[str] = None                          # imfaconc.cdescripcion
     fecha_remision: Optional[date] = None                   # CAST(imfact.dfechenviado AS DATE)
-    suma_asegurada: Optional[Decimal] = None                # imfact.ysumaseg
+    suma_asegurada: Optional[Decimal] = None                # imfact.ysumaseg / impoliza.ycantaseg en notas
     tasa_facturacion: Optional[Decimal] = None              # impoliza.ytasa
-    prima_neta: Optional[Decimal] = None                    # imfact.yprimaneta
-    porcentaje_comis: Optional[float] = None                # imfact.bporcomisprod
+    prima_neta: Optional[Decimal] = None                    # imfact.yprimaneta / aplicado sin impuesto en notas
+    porcentaje_comis: Optional[float] = None                # imfact.bporcomisprod / imrecpol.bporcomis en notas
     comision: Optional[Decimal] = None                      # ROUND(prima_neta * porcentaje_comis / 100, 2)
-    # Campos de cobros por recibo (imrecpol + imrecibo, sin anulados).
-    # TODO: revalidar cuando llegue el backup actualizado de la BD.
+    # Campos de cobros: solo en filas FACTURA (en las notas van en 0 / None).
     porcentaje_comis_recibo: Optional[float] = None         # imrecpol.bporcomis del recibo más reciente
-    prima_neta_cobrada: Optional[Decimal] = None            # SUM(yaplicado)
-    creditos_aplicados: Optional[Decimal] = None            # SUM(yaplicado) de recibos NOTCRED
-    comision_liquidada: Optional[Decimal] = None            # SUM(ycomisrecibida)
-    porcentaje_sobrecomis: Optional[Decimal] = None         # imfact.ysobrecomision
-    sobrecomis_liquidada: Optional[Decimal] = None          # SUM por recibo, fórmula de dos ramas
-    fecha_ingreso_cliente: Optional[datetime] = None        # imclient.dfechingreso
+    prima_neta_cobrada: Optional[Decimal] = None            # aplicado por recibos que no son nota de crédito, sin impuesto
+    creditos_aplicados: Optional[Decimal] = None            # aplicado desde notas de crédito, sin impuesto
+    comision_liquidada: Optional[Decimal] = None            # imrecingdet.comisionrecibida, tipo ingreso 1, sin rechazadas
+    porcentaje_sobrecomis: Optional[Decimal] = None         # imfact.ysobrecomision / imrecpol.ysobrecomision en notas
+    sobrecomis_liquidada: Optional[Decimal] = None          # imrecingdet.comisionrecibida, tipo ingreso 2, sin rechazadas
+    fecha_ingreso_cliente: Optional[datetime] = None        # imclient.fechaCreacionCliente
     frecuencia_facturacion: Optional[str] = None            # imfrefac.cdescripcion
     fecha_emision_poliza: Optional[datetime] = None         # impoliza.dfechemis
-    # Personal asignado al cliente (imcliejec + imejecut), por código de rol (imtipejec)
+    # Personal asignado a la póliza (impolejec + imejecut), por código de rol (imtipejec)
     analista_cobros_comisiones: Optional[str] = None        # 002
     analista_riesgos_personas: Optional[str] = None         # 006
     analista_riesgos_generales: Optional[str] = None        # 00000001
@@ -69,6 +62,7 @@ class ReporteProduccionRow(BaseModel):
 class ReporteProduccionFiltros(BaseModel):
     fecha_desde: date
     fecha_hasta: date
+    moneda: Optional[str] = None
     limit: Optional[int] = None
     offset: int = 0
 

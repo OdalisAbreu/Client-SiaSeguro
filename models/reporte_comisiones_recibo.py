@@ -61,6 +61,10 @@ class ReporteComisionesReciboRow(BaseModel):
     sobrecomis_diferencia: Optional[Decimal] = None         # sobrecomis_generada - sobrecomis_liquidada (BAJA CONFIANZA)
     agente_poliza: Optional[str] = None                     # NO VALIDADO (imcocorretaje / cocorredores)
     porcentaje_incentivo_agente: Optional[Decimal] = None   # NO VALIDADO
+
+
+class ReporteComisionesReciboEjecutivoRow(ReporteComisionesReciboRow):
+    """Misma fila que ReporteComisionesReciboRow más el Analista de Cobros y Comisiones."""
     analista_cobros_comisiones: Optional[str] = None        # imejecut vía impolejec (ccodtipejec '002')
 
 
@@ -68,7 +72,6 @@ class ReporteComisionesReciboFiltros(BaseModel):
     fecha_desde: date
     fecha_hasta: date
     cliente: Optional[str] = None
-    analista: Optional[str] = None
     sucursal: Optional[str] = None
     area: Optional[str] = None
     tipo_cliente: Optional[str] = None
@@ -84,3 +87,14 @@ class ReporteComisionesReciboResponse(BaseModel):
     filtros: ReporteComisionesReciboFiltros
     advertencias: list[str] = []
     data: list[ReporteComisionesReciboRow]
+
+
+class ReporteComisionesReciboEjecutivoFiltros(ReporteComisionesReciboFiltros):
+    analista: Optional[str] = None
+
+
+class ReporteComisionesReciboEjecutivoResponse(BaseModel):
+    total: int
+    filtros: ReporteComisionesReciboEjecutivoFiltros
+    advertencias: list[str] = []
+    data: list[ReporteComisionesReciboEjecutivoRow]

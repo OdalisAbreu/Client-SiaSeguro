@@ -17,8 +17,17 @@ from models.reporte_comisiones_recibo import (
     ReporteComisionesReciboRow,
     ReporteComisionesReciboFiltros,
     ReporteComisionesReciboResponse,
+    ReporteComisionesReciboEjecutivoRow,
+    ReporteComisionesReciboEjecutivoFiltros,
+    ReporteComisionesReciboEjecutivoResponse,
 )
 from models.ejecutivo import EjecutivoCuentaRow, PaginatedEjecutivoCuentaResponse
+from models.aseguradora import (
+    AseguradoraRow,
+    PaginatedAseguradoraResponse,
+    AseguradoraRamoRow,
+    PaginatedAseguradoraRamoResponse,
+)
 
 __all__ = [
     "Credentials",
@@ -39,6 +48,13 @@ __all__ = [
     "ReporteComisionesReciboRow",
     "ReporteComisionesReciboFiltros",
     "ReporteComisionesReciboResponse",
+    "ReporteComisionesReciboEjecutivoRow",
+    "ReporteComisionesReciboEjecutivoFiltros",
+    "ReporteComisionesReciboEjecutivoResponse",
     "EjecutivoCuentaRow",
     "PaginatedEjecutivoCuentaResponse",
+    "AseguradoraRow",
+    "PaginatedAseguradoraResponse",
+    "AseguradoraRamoRow",
+    "PaginatedAseguradoraRamoResponse",
 ]
