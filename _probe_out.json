@@ -46,5 +46,26 @@
  },
  "400_sin": 400,
  "400_con": 400,
- "t_sin": 26.3
+ "t_sin": 26.3,
+ "t_con": 48.5,
+ "total_sin": 232,
+ "total_con": 232,
+ "len_sin": 232,
+ "len_con": 232,
+ "sin_filas_con_clave_analista": 0,
+ "sin_filtros_keys": [
+  "fecha_desde",
+  "fecha_hasta",
+  "cliente",
+  "sucursal",
+  "area",
+  "tipo_cliente",
+  "aseguradora",
+  "ramo",
+  "moneda",
+  "limit",
+  "offset"
+ ],
+ "con_analista_no_nulo": 232,
+ "filas_identicas": 232
 }
